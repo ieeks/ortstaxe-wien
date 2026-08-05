@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+
+# lokale Arbeitsnotiz, Inhalt steckt jetzt in CLAUDE.md und TODO.md
+prompt.md

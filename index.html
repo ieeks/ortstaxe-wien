@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ortstaxe Wien — Airbnb CSV auswerten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E9EBEE;
+  --card:#FFFFFF;
+  --ink:#101820;
+  --ink-2:#4A5462;
+  --line:#C9CFD6;
+  --line-soft:#E2E6EA;
+  --r32:#8A94A6;
+  --r50:#186A57;
+  --r80:#A85B12;
+  --flag:#B3261E;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --cond:'IBM Plex Sans Condensed','IBM Plex Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding:32px 20px 80px}
+header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:24px}
+h1{font-family:var(--cond);font-weight:700;font-size:30px;letter-spacing:-.01em;margin:0 0 4px;text-transform:uppercase}
+.sub{font-family:var(--mono);font-size:12px;color:var(--ink-2);letter-spacing:.02em}
+h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:14px;margin:32px 0 10px;color:var(--ink-2);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:2px}
+.drop{padding:34px 24px;text-align:center;border:2px dashed var(--line);background:var(--card);border-radius:2px;transition:border-color .15s,background .15s;cursor:pointer}
+.drop:hover,.drop.hot{border-color:var(--r50);background:#F7FBF9}
+.drop strong{font-family:var(--cond);font-size:19px;text-transform:uppercase;letter-spacing:.04em;display:block}
+.drop span{font-size:13px;color:var(--ink-2)}
+input[type=file]{display:none}
+.opts{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end;margin-top:16px;padding:16px 18px}
+.opt{display:flex;flex-direction:column;gap:5px}
+.opt label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
+select,input[type=number],input[type=text]{font-family:var(--mono);font-size:13px;padding:7px 9px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:2px}
+input[type=number]{width:92px}
+input[type=text]#konto{width:120px}
+.lockrow{display:flex;align-items:center;gap:6px}
+#konto[readonly]{background:#F0F2F4;color:var(--ink-2);border-style:dashed;cursor:default}
+#konto:not([readonly]){border-color:var(--r50);box-shadow:0 0 0 2px rgba(24,106,87,.12)}
+.vz{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.vz code{font-family:var(--mono);font-size:13px;letter-spacing:.02em}
+.copy{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:2px;cursor:pointer;font-weight:500}
+.copy:hover{border-color:var(--ink);color:var(--ink);opacity:1}
+.copy.done{border-color:var(--r50);color:var(--r50)}
+.hint{font-size:12px;color:var(--ink-2);max-width:420px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:500}
+td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.num{font-family:var(--mono);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tot td{border-top:2px solid var(--ink);font-weight:600;background:#F5F6F8}
+.mono{font-family:var(--mono)}
+.dim{color:var(--ink-2)}
+.rate{font-family:var(--mono);font-size:11px;padding:1px 5px;border-radius:2px;color:#fff;white-space:nowrap}
+.r32{background:var(--r32)} .r50{background:var(--r50)} .r80{background:var(--r80)}
+/* Stichtagsband */
+.band{display:flex;height:12px;width:170px;border:1px solid var(--line);border-radius:1px;overflow:hidden;background:#fff}
+.band i{display:block;height:100%}
+.band i.s32{background:var(--r32)} .band i.s50{background:var(--r50)} .band i.s80{background:var(--r80)}
+.band i.tick{width:2px;background:var(--ink)}
+.flag{display:inline-block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--flag);border:1px solid var(--flag);padding:0 4px;border-radius:2px;margin-top:3px}
+.flag.ok{color:var(--ink-2);border-color:var(--line)}
+.btnrow{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+button{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;font-weight:600;padding:9px 16px;border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:2px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink)}
+button:hover{opacity:.86}
+button:focus-visible,.drop:focus-visible{outline:2px solid var(--r50);outline-offset:2px}
+.note{font-size:12.5px;color:var(--ink-2);margin-top:10px;padding-left:12px;border-left:2px solid var(--line)}
+.err{background:#FDECEA;border:1px solid var(--flag);color:#7A1913;padding:12px 14px;font-size:13.5px;margin-top:14px;border-radius:2px}
+.hide{display:none}
+.legend{display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--ink-2);margin:8px 0 0;flex-wrap:wrap}
+.legend b{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:middle}
+details{margin-top:26px;font-size:13.5px}
+summary{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;cursor:pointer;color:var(--ink-2)}
+details p,details li{color:var(--ink-2)}
+/* 90-Tage-Zähler */
+.quota{padding:18px 20px}
+.quota-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.quota-big{font-family:var(--cond);font-size:38px;font-weight:700;line-height:1;letter-spacing:-.02em}
+.quota-big small{font-family:var(--mono);font-size:12px;font-weight:400;letter-spacing:0;color:var(--ink-2);margin-left:8px}
+.meter{display:flex;height:26px;margin:14px 0 8px;border:1px solid var(--line);background:repeating-linear-gradient(90deg,#fff 0 calc(100%/90 - 1px),var(--line-soft) calc(100%/90 - 1px) calc(100%/90))}
+.meter i{display:block;height:100%}
+.meter i.used{background:var(--r50)}
+.meter i.grey{background:var(--r80);opacity:.55}
+.meter i.over{background:var(--flag)}
+.quota-legend{display:flex;gap:18px;font-family:var(--mono);font-size:11px;color:var(--ink-2);flex-wrap:wrap}
+.quota-legend b{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:middle}
+.print-only{display:none}
+@media(max-width:700px){.wrap{padding:20px 12px 60px}table{font-size:12.5px}.band{width:110px}.quota-big{font-size:30px}}
+@media print{
+  @page{size:A4 portrait;margin:14mm}
+  body{background:#fff;font-size:10.5pt}
+  .wrap{max-width:none;padding:0}
+  header,.drop,.opts,.btnrow,details,#error{display:none!important}
+  .print-only{display:block}
+  .card{border:1px solid #999;break-inside:auto}
+  h2{margin:14pt 0 6pt;color:#000;break-after:avoid}
+  table{font-size:9pt}
+  th{border-bottom:1px solid #000}
+  tr{break-inside:avoid}
+  .rate{color:#000!important;background:none!important;border:1px solid #999;padding:0 3px}
+  .col-band,#pdfNote,.copy{display:none}
+  #rows-wrap{overflow:visible}
+  td,th{padding:5px 6px}
+  .note,.legend,.hint{color:#333}
+  body.print-months #rows-wrap,body.print-months #rows-h,body.print-months #warnings,
+  body.print-months #quota,body.print-months #quota-h{display:none!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Ortstaxe Wien</h1>
+  <div class="sub">Airbnb-CSV → Meldebeträge pro Monat · Stichtage 01.07.2026 (3,2 → 5 %) und 01.07.2027 (5 → 8 %) · nächteweise Aufteilung</div>
+</header>
+
+<div class="drop" id="drop" tabindex="0" role="button" aria-label="CSV-Datei auswählen">
+  <strong>CSV hier ablegen</strong>
+  <span>oder klicken — Airbnb → Reservierungen → Exportieren. Die Datei bleibt im Browser.</span>
+  <input type="file" id="file" accept=".csv,text/csv">
+</div>
+
+<div class="card opts">
+  <div class="opt">
+    <label for="basis">Betragsbasis in der Spalte „Einkünfte“</label>
+    <select id="basis">
+      <option value="net" selected>ohne USt, inkl. Ortstaxe</option>
+      <option value="ust10">inkl. 10 % USt und Ortstaxe</option>
+    </select>
+  </div>
+  <div class="opt">
+    <label for="zaehl">90-Tage-Zählung</label>
+    <select id="zaehl">
+      <option value="nights" selected>Nächte</option>
+      <option value="days">belegte Tage inkl. Abreisetag</option>
+    </select>
+  </div>
+  <div class="opt">
+    <label for="konto">Abgabenkonto MA 6</label>
+    <div class="lockrow">
+      <input type="text" id="konto" value="601005590" spellcheck="false" readonly>
+      <button type="button" class="copy" id="kontoLock" aria-pressed="false">Ändern</button>
+    </div>
+  </div>
+  <div class="opt">
+    <label for="fee">Airbnb-Grundgebühr</label>
+    <input type="number" id="fee" value="3.0" min="0" max="30" step="0.1"> <span class="mono dim" style="font-size:11px">% vom Bruttoentgelt</span>
+  </div>
+  <div class="opt">
+    <label for="uid">UID bei Airbnb hinterlegt</label>
+    <select id="uid">
+      <option value="nein" selected>Nein — 20 % USt auf die Gebühr</option>
+      <option value="ja">Ja — Reverse Charge, ohne USt</option>
+    </select>
+    <span class="mono dim" style="font-size:11px" id="feeEff"></span>
+  </div>
+  <div class="opt" style="flex:1;min-width:240px">
+    <div class="hint">Die CSV-Spalte „Einkünfte“ ist die Auszahlung nach Abzug der Servicegebühr. Bemessungsgrundlage ist das Entgelt des Gastes, deshalb wird hochgerechnet. Ohne hinterlegte UID verrechnet Airbnb 20 % USt auf die Gebühr, mit UID greift Reverse Charge und der Abzug ist entsprechend kleiner. Bei Direktbuchungen 0 eintragen.</div>
+  </div>
+</div>
+
+<div id="error" class="err hide"></div>
+
+<div id="out" class="hide">
+
+  <div class="print-only" style="border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px">
+    <div style="font-family:var(--cond);font-size:19pt;font-weight:700;text-transform:uppercase">Ortstaxe Wien</div>
+    <div class="mono" style="font-size:8.5pt" id="printMeta"></div>
+  </div>
+
+  <h2 id="quota-h">Kurzzeitvermietung — 90 Tage pro Kalenderjahr</h2>
+  <div class="card quota" id="quota"></div>
+
+  <h2>Meldung pro Monat — VIETour</h2>
+  <div class="card"><table id="months"></table></div>
+  <div class="legend">
+    <span><b style="background:var(--r32)"></b>3,2 % bis 30.06.2026 (nach 11 % Pauschalabzug)</span>
+    <span><b style="background:var(--r50)"></b>5 % ab 01.07.2026</span>
+    <span><b style="background:var(--r80)"></b>8 % ab 01.07.2027</span>
+  </div>
+  <div class="note">Zahlungstermin ist jeweils der 15. des Folgemonats. Die Bemessungsgrundlage ist das Beherbergungsentgelt ohne USt und ohne Ortstaxe — das ist der Wert, der ins Formular gehört, die Abgabe rechnet sich daraus.</div>
+
+  <h2>Überweisungen an MA 6</h2>
+  <div class="card"><table id="pays"></table></div>
+  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats.</div>
+
+  <h2 id="rows-h">Buchungen</h2>
+  <div class="card" id="rows-wrap" style="overflow-x:auto"><table id="rows"></table></div>
+
+  <div class="btnrow">
+    <button id="pdfAll">Gesamtbericht als PDF</button>
+    <button id="pdfMonths" class="ghost">Nur Monatsübersicht als PDF</button>
+    <button id="dlMonths" class="ghost">Monatsübersicht als CSV</button>
+    <button id="dlRows" class="ghost">Buchungsdetail als CSV</button>
+  </div>
+  <div class="note" id="pdfNote">PDF: Der Druckdialog öffnet sich — dort „Als PDF sichern“ wählen.</div>
+
+  <div id="warnings"></div>
+</div>
+
+<details>
+  <summary>Wie gerechnet wird</summary>
+  <p>Jede Buchung wird in einzelne Nächte zerlegt. Jede Nacht bekommt den Satz, der an diesem Datum gilt, und fällt in den Meldemonat, in dem sie beginnt. Das Entgelt wird gleichmäßig auf die Nächte verteilt — bei stark schwankenden Nachtpreisen ist das eine Näherung.</p>
+  <p>Angewendete Schlüsselzahlen der Stadt Wien auf den Betrag inklusive enthaltener Ortstaxe:</p>
+  <ul>
+    <li>ohne USt: 2,7691 % bis 30.06.2026 · 4,7619 % ab 01.07.2026 · 7,4074 % ab 01.07.2027</li>
+    <li>bei 10 % USt: 2,5237 % bis 30.06.2026 · 4,3478 % ab 01.07.2026 · 6,7797 % ab 01.07.2027</li>
+  </ul>
+  <p><strong>Bemessungsgrundlage:</strong> § 12 WTFG nennt als Abzüge nur die Umsatzsteuer und das Frühstück im ortsüblichen Ausmaß (bis 30.06.2026 zusätzlich den 11 %-Pauschalabzug). Eine Reinigungsgebühr ist nicht abzugsfähig — das BFG hat am 23.04.2024 zu RV/7400107/2023 entschieden, dass die Endreinigung als Nebenleistung zum Aufenthalt gehört (Amtsrevision anhängig). Ebenso wenig abzugsfähig ist die einbehaltene Airbnb-Servicegebühr, weil es auf das ankommt, was der Gast aufwendet, nicht auf die Auszahlung. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf die Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Auf die Bemessungsgrundlage der Ortstaxe hat das keinen Einfluss — nur darauf, wie weit von der Auszahlung auf das Entgelt hochgerechnet werden muss.</p>
+  <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
+  <p>Stornierte Buchungen werden übersprungen. Aufenthalte über mehr als drei Monate ununterbrochen sind befreit und werden mit 0 ausgewiesen. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
+</details>
+
+</div>
+
+<script>
+const STICHTAG_5 = Date.UTC(2026,6,1);
+const STICHTAG_8 = Date.UTC(2027,6,1);
+const EFF = {r32:0.032*0.89, r50:0.05, r80:0.08};
+
+function regimeOf(ts){ return ts < STICHTAG_5 ? 'r32' : (ts < STICHTAG_8 ? 'r50' : 'r80'); }
+function fmt(n){ return n.toLocaleString('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function pct(e){ return e===EFF.r32?'3,2 %':(e===EFF.r50?'5 %':'8 %'); }
+
+/* --- CSV --- */
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/,'');
+  const rows=[]; let row=[], cell='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; }
+      else cell+=c;
+    } else if(c==='"') q=true;
+    else if(c===','||c===';'){ row.push(cell); cell=''; }
+    else if(c==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+    else if(c!=='\r') cell+=c;
+  }
+  if(cell.length||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==''));
+}
+function findCol(head, names){
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9äöüß#]/g,'');
+  const h = head.map(norm);
+  for(const n of names){ const i=h.indexOf(norm(n)); if(i>=0) return i; }
+  for(const n of names){ const i=h.findIndex(x=>x.includes(norm(n))); if(i>=0) return i; }
+  return -1;
+}
+function parseDate(s){
+  s=(s||'').trim();
+  let m=s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})\.?$/);
+  if(m){ let y=+m[3]; if(y<100) y+=2000; return Date.UTC(y,+m[2]-1,+m[1]); }
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return Date.UTC(+m[1],+m[2]-1,+m[3]);
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m) return Date.UTC(+m[3],+m[1]-1,+m[2]);
+  return NaN;
+}
+function parseMoney(s){
+  s=(s||'').replace(/[^\d,.\-]/g,'');
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  else if((s.match(/\./g)||[]).length>1) s=s.replace(/\./g,'');
+  const v=parseFloat(s);
+  return isNaN(v)?0:v;
+}
+
+/* --- Berechnung --- */
+function compute(csvRows, opt){
+  const head=csvRows[0];
+  const ci={
+    code: findCol(head,['Bestätigungs-Code','Confirmation code','Code']),
+    status: findCol(head,['Status']),
+    name: findCol(head,['Name des Gastes','Guest name']),
+    start: findCol(head,['Startdatum','Start date','Check-in']),
+    end: findCol(head,['Enddatum','End date','Checkout']),
+    nights: findCol(head,['Anzahl der Nächte','# of nights','Nights']),
+    amount: findCol(head,['Einkünfte','Bruttoeinkünfte','Earnings','Gross earnings','Amount']),
+    listing: findCol(head,['Inserat','Listing'])
+  };
+  if(ci.start<0||ci.end<0||ci.amount<0)
+    throw new Error('Die Spalten Startdatum, Enddatum und Einkünfte wurden nicht gefunden. Gefundene Kopfzeile: '+head.join(' | '));
+
+  const gross = 1/(1 - (opt.fee/100));
+  const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
+  const bookings=[], months={}, warn=[], seen={};
+
+  for(let r=1;r<csvRows.length;r++){
+    const row=csvRows[r];
+    const status=(ci.status>=0?row[ci.status]:'')||'';
+    const code=(ci.code>=0?row[ci.code]:'')||('Zeile '+(r+1));
+    const name=(ci.name>=0?row[ci.name]:'')||'';
+    const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
+    const amt=parseMoney(row[ci.amount])*gross;
+
+    if(/storn|cancel/i.test(status)){ warn.push(code+' ('+name+') übersprungen — Status „'+status.trim()+'“.'); continue; }
+    if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
+    const nights=Math.round((b-a)/86400000);
+    if(nights<=0){ warn.push(code+' übersprungen — '+nights+' Nächte.'); continue; }
+    if(seen[code]) warn.push(code+' kommt mehrfach vor — bitte prüfen.');
+    seen[code]=1;
+    if(!amt) warn.push(code+' ('+name+') hat keinen Betrag — wird mit 0 gerechnet.');
+
+    const limit=new Date(a); limit.setUTCMonth(limit.getUTCMonth()+3);
+    const exempt = b > limit.getTime();
+
+    const per=amt/nights, segs=[], byKey={};
+    let taxTotal=0, baseTotal=0;
+    for(let i=0;i<nights;i++){
+      const ts=a+i*86400000, d=new Date(ts);
+      const reg=regimeOf(ts), e=EFF[reg];
+      const base = exempt ? 0 : per/(ustF+e);
+      const tax  = exempt ? 0 : base*e;
+      baseTotal+=base; taxTotal+=tax;
+      const mk=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');
+      const key=mk+'|'+reg;
+      if(!byKey[key]) byKey[key]={month:mk,reg:reg,nights:0,base:0,tax:0};
+      byKey[key].nights++; byKey[key].base+=base; byKey[key].tax+=tax;
+      if(!exempt){
+        if(!months[key]) months[key]={month:mk,reg:reg,nights:0,base:0,tax:0};
+        months[key].nights++; months[key].base+=base; months[key].tax+=tax;
+      }
+      segs.push(reg);
+    }
+    const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
+    bookings.push({code,name,a,b,nights,amt,exempt,cls,base:baseTotal,tax:taxTotal,
+                   parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
+  }
+  return {bookings,months:Object.values(months).sort((x,y)=>x.month.localeCompare(y.month)||x.reg.localeCompare(y.reg)),warn};
+}
+
+/* --- 90-Tage-Zähler (Bauordnung) --- */
+function occupancy(bookings, mode){
+  const years={};
+  bookings.forEach(b=>{
+    if(b.cls==='lang') return;
+    const last = b.b + (mode==='days' ? 0 : -86400000);
+    for(let ts=b.a; ts<=last; ts+=86400000){
+      const y=new Date(ts).getUTCFullYear();
+      if(!years[y]) years[y]={kurz:new Set(),grau:new Set()};
+      years[y][b.cls==='kurz'?'kurz':'grau'].add(ts);
+    }
+  });
+  return Object.keys(years).sort().map(y=>{
+    const kurz=years[y].kurz, grau=years[y].grau;
+    const grauOnly=[...grau].filter(d=>!kurz.has(d)).length;
+    return {year:+y, kurz:kurz.size, grau:grauOnly};
+  });
+}
+function renderQuota(bookings, mode){
+  const data=occupancy(bookings,mode), el=document.getElementById('quota');
+  if(!data.length){ el.innerHTML='<div class="dim">Keine kurzfristigen Vermietungen in den Daten.</div>'; return; }
+  const unit = mode==='days' ? 'Tage' : 'Nächte';
+  el.innerHTML = data.map(d=>{
+    const rest=90-d.kurz, worst=90-d.kurz-d.grau;
+    const w=x=>Math.min(100,Math.max(0,x/90*100));
+    const over=d.kurz>90;
+    return '<div style="margin-bottom:18px">'
+      +'<div class="quota-head"><div class="quota-big" style="'+(over?'color:var(--flag)':'')+'">'
+        +(over?('+'+(d.kurz-90)):rest)+'<small>'+(over?unit+' über dem Limit':unit+' offen von 90 · '+d.year)+'</small></div>'
+      +'<div class="mono" style="font-size:12px;color:var(--ink-2)">verbraucht '+d.kurz+' / 90'+(d.grau?' · Graubereich '+d.grau:'')+'</div></div>'
+      +'<div class="meter">'
+        +'<i class="'+(over?'over':'used')+'" style="width:'+w(Math.min(d.kurz,90))+'%"></i>'
+        +(d.grau?'<i class="grey" style="width:'+w(Math.min(d.grau,Math.max(0,90-d.kurz)))+'%"></i>':'')
+      +'</div>'
+      +'<div class="quota-legend"><span><b style="background:var(--r50)"></b>Aufenthalte bis 30 '+unit+'</span>'
+        +(d.grau?'<span><b style="background:var(--r80);opacity:.55"></b>31 '+unit+' bis 3 Monate — Einzelfall</span>':'')
+        +'<span>Worst Case offen: '+worst+'</span></div>'
+    +'</div>';
+  }).join('')
+  + '<div class="note" style="margin-top:0">Gezählt werden nur bestätigte Buchungen aus dieser CSV. Baurechtlich zählt bereits das <em>Anbieten</em> der Wohnung — leerstehende, aber inserierte Tage sind hier nicht erfasst. Aufenthalte über 3 Monate gelten nicht als Kurzzeitvermietung und bleiben außen vor.</div>';
+}
+
+function fallback(text, done){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ prompt('Verwendungszweck kopieren:', text); }
+  document.body.removeChild(ta);
+}
+
+/* --- Ausgabe --- */
+function monthLabel(m){ const [y,mo]=m.split('-'); return mo+'/'+y; }
+function bandHTML(segs){
+  let html='', prev=null;
+  segs.forEach(s=>{ if(prev&&s!==prev) html+='<i class="tick"></i>'; html+='<i class="s'+s.slice(1)+'" style="flex:1"></i>'; prev=s; });
+  return '<div class="band" title="'+segs.length+' Nächte">'+html+'</div>';
+}
+function render(res, opt){
+  document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
+  renderQuota(res.bookings, opt.zaehl);
+  document.getElementById('printMeta').textContent =
+    'Erstellt '+new Date().toLocaleDateString('de-AT')+' · Basis: '
+    +(opt.basis==='ust10'?'Beträge inkl. 10 % USt und Ortstaxe':'Beträge ohne USt, inkl. Ortstaxe')
+    +(opt.fee?' · Servicegebühr '+opt.fee.toFixed(2).replace('.',',')+' % hochgerechnet (UID '+(opt.uid==='ja'?'ja':'nein')+')':'')
+    +' · '+res.bookings.length+' Buchungen';
+  const mt=document.getElementById('months');
+  let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th><th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th></tr>';
+  let sb=0,st=0,sn=0;
+  res.months.forEach(m=>{
+    sb+=m.base; st+=m.tax; sn+=m.nights;
+    h+='<tr><td class="mono">'+monthLabel(m.month)+'</td>'
+      +'<td><span class="rate '+m.reg+'">'+pct(EFF[m.reg])+'</span></td>'
+      +'<td class="num">'+m.nights+'</td>'
+      +'<td class="num">'+fmt(m.base)+'</td>'
+      +'<td class="num"><strong>'+fmt(Math.round(m.tax*100)/100)+'</strong></td></tr>';
+  });
+  h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sn+'</td><td class="num">'+fmt(sb)+'</td><td class="num">'+fmt(Math.round(st*100)/100)+'</td></tr>';
+  mt.innerHTML=h;
+
+  const pt=document.getElementById('pays');
+  const perMonth={};
+  res.months.forEach(m=>{ perMonth[m.month]=(perMonth[m.month]||0)+m.tax; });
+  const keys=Object.keys(perMonth).sort();
+  let p='<tr><th>Aufenthaltsmonat</th><th>Fällig</th><th class="num">Betrag</th><th style="text-align:right">Verwendungszweck</th></tr>';
+  keys.forEach(k=>{
+    const [y,mo]=k.split('-');
+    const due=new Date(Date.UTC(+y,+mo,15)).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+    const vz=opt.konto+mo+y;
+    p+='<tr><td class="mono">'+monthLabel(k)+'</td><td class="mono dim">'+due+'</td>'
+      +'<td class="num"><strong>'+fmt(Math.round(perMonth[k]*100)/100)+'</strong></td>'
+      +'<td><div class="vz"><code>'+vz+'</code><button class="copy" data-vz="'+vz+'">Kopieren</button></div></td></tr>';
+  });
+  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(Math.round(keys.reduce((s,k)=>s+perMonth[k],0)*100)/100)+'</td><td></td></tr>';
+  pt.innerHTML=p;
+  pt.querySelectorAll('.copy').forEach(btn=>{
+    btn.onclick=()=>{
+      const t=btn.dataset.vz;
+      const done=()=>{ btn.textContent='Kopiert'; btn.classList.add('done'); setTimeout(()=>{btn.textContent='Kopieren';btn.classList.remove('done');},1600); };
+      if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(t).then(done,()=>fallback(t,done));
+      else fallback(t,done);
+    };
+  });
+
+  const rt=document.getElementById('rows');
+  let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th><th>Aufteilung</th><th class="num">Ortstaxe</th></tr>';
+  res.bookings.forEach(b=>{
+    const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
+    const parts=b.exempt
+      ? '<span class="flag">über 3 Monate — befreit</span>'
+      : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(Math.round(p.tax*100)/100)+'</div>').join('');
+    g+='<tr><td class="mono" style="font-size:12px">'+b.code+'</td><td>'+b.name+'</td>'
+      +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
+      +'<td class="num">'+b.nights+'</td>'
+      +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
+      +'<td class="num">'+fmt(b.amt)+'</td>'
+      +'<td>'+parts+'</td>'
+      +'<td class="num"><strong>'+fmt(Math.round(b.tax*100)/100)+'</strong></td></tr>';
+  });
+  rt.innerHTML=g;
+
+  const w=document.getElementById('warnings');
+  w.innerHTML = res.warn.length
+    ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>'
+    : '';
+  document.getElementById('out').classList.remove('hide');
+
+  window.__csvMonths='Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
+    res.months.map(m=>[monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),fmt(Math.round(m.tax*100)/100),opt.konto+m.month.split('-')[1]+m.month.split('-')[0]].join(';')).join('\n');
+  window.__csvRows='Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
+    res.bookings.flatMap(b=>{
+      const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+      if(b.exempt) return [[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'].join(';')];
+      return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(Math.round(p.tax*100)/100)].join(';'));
+    }).join('\n');
+}
+
+/* --- Steuerung --- */
+let lastText=null;
+function run(){
+  if(!lastText) return;
+  const err=document.getElementById('error');
+  try{
+    err.classList.add('hide');
+    const opt={basis:document.getElementById('basis').value,
+               fee:((parseFloat(document.getElementById('fee').value)||0)
+                    * (document.getElementById('uid').value==='ja' ? 1 : 1.2)),
+               uid:document.getElementById('uid').value,
+               zaehl:document.getElementById('zaehl').value,
+               konto:(document.getElementById('konto').value||'').replace(/\s/g,'')};
+    render(compute(parseCSV(lastText),opt),opt);
+  }catch(e){
+    err.textContent=e.message; err.classList.remove('hide');
+    document.getElementById('out').classList.add('hide');
+  }
+}
+function load(f){ const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8'); }
+
+const drop=document.getElementById('drop'), file=document.getElementById('file');
+drop.onclick=()=>file.click();
+drop.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click();} };
+file.onchange=e=>{ if(e.target.files[0]) load(e.target.files[0]); };
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) load(f); });
+document.getElementById('basis').onchange=run;
+document.getElementById('zaehl').onchange=run;
+document.getElementById('uid').onchange=run;
+document.getElementById('konto').oninput=run;
+
+(function(){
+  const inp=document.getElementById('konto'), btn=document.getElementById('kontoLock');
+  let saved=inp.value;
+  function lock(){
+    if(!/^\d{6,12}$/.test(inp.value.replace(/\s/g,''))){ inp.value=saved; run(); }
+    else saved=inp.value.replace(/\s/g,'');
+    inp.value=saved; inp.readOnly=true; btn.textContent='Ändern'; btn.setAttribute('aria-pressed','false'); run();
+  }
+  btn.onclick=()=>{
+    if(inp.readOnly){ inp.readOnly=false; btn.textContent='Sperren'; btn.setAttribute('aria-pressed','true'); inp.focus(); inp.select(); }
+    else lock();
+  };
+  inp.onblur=()=>{ if(!inp.readOnly) lock(); };
+  inp.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();lock();} if(e.key==='Escape'){inp.value=saved;lock();} };
+})();
+document.getElementById('fee').oninput=run;
+
+function toPDF(onlyMonths){
+  document.body.classList.toggle('print-months',!!onlyMonths);
+  window.print();
+}
+window.onafterprint=()=>document.body.classList.remove('print-months');
+document.getElementById('pdfAll').onclick=()=>toPDF(false);
+document.getElementById('pdfMonths').onclick=()=>toPDF(true);
+
+function download(name,data){
+  const blob=new Blob(['\uFEFF'+data],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
+}
+document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',window.__csvMonths||'');
+document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
+</script>
+</body>
+</html>
