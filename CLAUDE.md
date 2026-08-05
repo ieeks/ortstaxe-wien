@@ -4,7 +4,10 @@
 
 Single-File-Tool, das eine Airbnb-Reservierungs-CSV einliest und daraus die Wiener
 Ortstaxe pro Meldemonat berechnet. Läuft per Doppelklick im Browser und über
-GitHub Pages unter https://ieeks.github.io/ortstaxe-wien/
+GitHub Pages unter https://manuel.tools/ortstaxe-wien/
+
+Das Konto `ieeks` hat eine Custom Domain (`manuel.tools`), deshalb läuft auch
+dieses Projekt-Pages darunter — `ieeks.github.io/ortstaxe-wien/` leitet dorthin um.
 
 ## Harte Regeln
 

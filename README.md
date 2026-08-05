@@ -4,7 +4,7 @@ Rechnet aus einem Airbnb-Reservierungsexport die Wiener Ortstaxe pro Meldemonat
 aus — inklusive der Satzwechsel zum 01.07.2026 und 01.07.2027, der Aufteilung
 von Buchungen über den Monatswechsel und dem 90-Tage-Zähler der Bauordnung.
 
-**→ https://ieeks.github.io/ortstaxe-wien/**
+**→ https://manuel.tools/ortstaxe-wien/**
 
 Eine einzige HTML-Datei, kein Build, keine Abhängigkeiten außer den Google Fonts.
 Die CSV wird ausschließlich im Browser verarbeitet und nirgendwo hochgeladen.
