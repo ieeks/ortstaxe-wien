@@ -235,6 +235,15 @@ function pct(e){ return e===EFF.r32?'3,2 %':(e===EFF.r50?'5 %':'8 %'); }
 /* --- CSV --- */
 function parseCSV(text){
   text = text.replace(/^\uFEFF/,'');
+  // Trenner aus der Kopfzeile bestimmen \u2014 gemischt geht nicht, sonst
+  // zerrei\u00DFen Dezimalkommas in Semikolon-CSVs (Excel-Resave) die Zellen
+  const nl=text.indexOf('\n'), first=nl<0?text:text.slice(0,nl);
+  let sc=0, cc=0, fq=false;
+  for(const ch of first){
+    if(ch==='"') fq=!fq;
+    else if(!fq){ if(ch===';') sc++; else if(ch===',') cc++; }
+  }
+  const sep = sc>=cc ? ';' : ',';
   const rows=[]; let row=[], cell='', q=false;
   for(let i=0;i<text.length;i++){
     const c=text[i];
@@ -242,7 +251,7 @@ function parseCSV(text){
       if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; }
       else cell+=c;
     } else if(c==='"') q=true;
-    else if(c===','||c===';'){ row.push(cell); cell=''; }
+    else if(c===sep){ row.push(cell); cell=''; }
     else if(c==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
     else if(c!=='\r') cell+=c;
   }
@@ -256,19 +265,27 @@ function findCol(head, names){
   for(const n of names){ const i=h.findIndex(x=>x.includes(norm(n))); if(i>=0) return i; }
   return -1;
 }
+function mkDate(y,mo,d){
+  if(y<100) y+=2000;
+  const t=Date.UTC(y,mo-1,d), c=new Date(t);
+  return (c.getUTCMonth()===mo-1&&c.getUTCDate()===d) ? t : NaN;
+}
 function parseDate(s){
   s=(s||'').trim();
-  let m=s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})\.?$/);
-  if(m){ let y=+m[3]; if(y<100) y+=2000; return Date.UTC(y,+m[2]-1,+m[1]); }
+  let m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\.?$/);
+  if(m) return mkDate(+m[3],+m[2],+m[1]);
   m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return Date.UTC(+m[1],+m[2]-1,+m[3]);
-  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if(m) return Date.UTC(+m[3],+m[1]-1,+m[2]);
+  if(m) return mkDate(+m[1],+m[2],+m[3]);
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m) return +m[1]>12 ? mkDate(+m[3],+m[2],+m[1]) : mkDate(+m[3],+m[1],+m[2]);
   return NaN;
 }
 function parseMoney(s){
   s=(s||'').replace(/[^\d,.\-]/g,'');
-  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  // Dezimaltrenner ist das zuletzt vorkommende Zeichen: 1.644,80 wie 1,644.80
+  const lc=s.lastIndexOf(','), lp=s.lastIndexOf('.');
+  if(lc>lp) s=s.replace(/\./g,'').replace(',','.');
+  else if(lc>=0) s=s.replace(/,/g,'');
   else if((s.match(/\./g)||[]).length>1) s=s.replace(/\./g,'');
   const v=parseFloat(s);
   return isNaN(v)?0:v;
@@ -306,6 +323,10 @@ function compute(csvRows, opt){
     if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
     const nights=Math.round((b-a)/86400000);
     if(nights<=0){ warn.push(code+' übersprungen — '+nights+' Nächte.'); continue; }
+    if(ci.nights>=0){
+      const cn=parseInt(row[ci.nights],10);
+      if(cn>0&&cn!==nights) warn.push(code+' ('+name+') — CSV nennt '+cn+' Nächte, aus den Daten ergeben sich '+nights+'. Bitte Datumsformat prüfen.');
+    }
     if(seen[code]) warn.push(code+' kommt mehrfach vor — bitte prüfen.');
     seen[code]=1;
     if(!amt) warn.push(code+' ('+name+') hat keinen Betrag — wird mit 0 gerechnet.');
