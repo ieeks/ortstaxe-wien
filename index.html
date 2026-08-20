@@ -563,6 +563,15 @@ function bandHTML(segs){
    über „Buchungsdetail als CSV“ — diese Datei lässt sich wieder einlesen. */
 const paidRaw = Object.create(null);
 
+/* Werte aus der Spalte „Vom Gast bezahlt“ ins Gedächtnis übernehmen. Ohne das
+   wären sie beim nächsten Upload der rohen Airbnb-CSV weg, obwohl dieselben
+   Buchungen drinstehen. Bereits Eingetipptes bleibt unangetastet — auch eine
+   bewusst geleerte Eingabe, die als leerer String hinterlegt ist. */
+function merkeGastbetraege(bookings, ziel){
+  bookings.forEach(b=>{ if(ziel[b.code]===undefined && b.paid) ziel[b.code]=fmt(b.paid); });
+  return ziel;
+}
+
 function render(res, opt){
   document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
   renderQuota(res.bookings, opt.zaehl);
@@ -691,15 +700,20 @@ function run(){
                paid:(()=>{ const m=Object.create(null);
                  for(const k in paidRaw) m[k]=parseMoney(paidRaw[k]);
                  return m; })()};
-    render(compute(parseCSV(lastText),opt),opt);
+    const res=compute(parseCSV(lastText),opt);
+    merkeGastbetraege(res.bookings, paidRaw);
+    render(res,opt);
   }catch(e){
     err.textContent=e.message; err.classList.remove('hide');
     document.getElementById('out').classList.add('hide');
   }
 }
 function load(f){
-  // Neue Datei, neue Buchungen: alte Eingaben gehören nicht auf fremde Codes.
-  for(const k in paidRaw) delete paidRaw[k];
+  // Eingaben bleiben stehen. Sie hängen am Bestätigungs-Code, und der gehört
+  // dauerhaft zu genau einer Buchung — ein gemerkter Betrag kann also nie auf
+  // einer fremden landen. Wer die Gastbeträge einträgt und danach den frischen
+  // Airbnb-Export lädt, behält sie für die bekannten Buchungen; neue Zeilen
+  // kommen leer dazu.
   const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8');
 }
 
@@ -994,6 +1008,31 @@ if(location.search.indexOf('selftest')>=0){
     round2(mitEingabe('',{T:3633.26}).paid), 3633.26);
   t('Eingabe','Eingabe zählt auch für den Meldemonat',
     round2(mitEingabe('',{T:3633.26}).parts[1].tax), 125.47);
+
+  /* Gedächtnis über mehrere Uploads. Wer die Gastbeträge einträgt, exportiert
+     und danach den frischen Airbnb-Export lädt, darf sie nicht verlieren —
+     der rohe Export hat die Spalte ja nicht. */
+  const merk=Object.create(null);
+  const ausDatei=compute(parseCSV(HEADP+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93;3633,26'),OPTB);
+  merkeGastbetraege(ausDatei.bookings, merk);
+  /* Gegen fmt vergleichen, nicht gegen ein Literal: de-AT trennt Tausender mit
+     einem geschützten Leerzeichen, das sich nicht abtippen lässt. */
+  t('Gedächtnis','Wert aus der Spalte wird gemerkt', merk.T, fmt(3633.26));
+  t('Gedächtnis','gemerkter Wert rechnet nach dem Upload weiter',
+    round2(compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),
+      Object.assign({},OPTB,{paid:{T:parseMoney(merk.T)}})).bookings[0].amt), 3569.72);
+  t('Gedächtnis','ohne Gedächtnis wäre es die Schätzung',
+    round2(compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),OPTB).bookings[0].amt), 3707.28);
+
+  const merk2={T:'1000,00'};
+  merkeGastbetraege(ausDatei.bookings, merk2);
+  t('Gedächtnis','Eingetipptes wird nicht überschrieben', merk2.T, '1000,00');
+  const merk3={T:''};
+  merkeGastbetraege(ausDatei.bookings, merk3);
+  t('Gedächtnis','bewusst geleertes Feld bleibt leer', merk3.T, '');
+  const merk4=Object.create(null);
+  merkeGastbetraege(compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),OPTB).bookings, merk4);
+  t('Gedächtnis','ohne Spalte wird nichts gemerkt', merk4.T, undefined);
 
   /* 90-Tage-Zähler der Bauordnung. Bisher ungetestet — die echten Aufenthalte
      eines Jahres, Stichtag 20.08.2026, damit verbraucht und fest gebucht
