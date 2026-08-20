@@ -244,7 +244,7 @@ details p,details li{color:var(--ink-2)}
   <p><strong>Rechtsgrundlage der Erhöhung:</strong> LGBl. für Wien Nr. 2/2026, ausgegeben am 23.02.2026. Artikel I ersetzt in § 14 WTFG „3,2 vH“ durch „5 vH“ (Z 2) und anschließend „5 vH“ durch „8 vH“ (Z 3). Artikel II setzt Z 1 und 2 mit 01.07.2026 in Kraft, Z 3 mit 01.07.2027. Beide Stufen sind damit bereits kundgemachtes Recht, die zweite ist keine bloße Ankündigung. Eine Übergangsregelung für vorher getätigte Buchungen enthält das Gesetz nicht — maßgeblich ist, wann die Nacht stattfindet, nicht wann gebucht wurde.</p>
   <p><strong>Bemessungsgrundlage:</strong> § 12 Abs. 1 WTFG: „Bemessungsgrundlage ist das Entgelt für den Aufenthalt im Sinne des § 11.“ Nicht dazu gehören nach Abs. 2 nur die Umsatzsteuer und das Entgelt für das Frühstück im ortsüblichen Ausmaß. Bis 30.06.2026 kam der 11 %-Pauschalabzug nach § 12 Abs. 2 lit. c dazu; diese lit. c ist durch Art. I Z 1 LGBl. für Wien Nr. 2/2026 mit 01.07.2026 entfallen — die Schlüsselzahl 2,7691 % der MA 6 rechnet ihn noch ein.</p>
   <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Ob du selbst putzt oder eine Reinigungskraft bezahlst, ändert daran nichts — die Bemessungsgrundlage kennt keine Kostenseite, maßgeblich ist allein, was der Gast aufwendet. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
-  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. Im Reservierungs-Export steht dieser Betrag nicht. Anders als die Gastgebergebühr ist er auch kein fester Prozentsatz — Airbnb staffelt ihn nach Dauer und Preis, belegt sind 14,0 % netto bei sieben und 9,8 % bei 42 Nächten. Aus der Auszahlung ist er nicht rekonstruierbar, weil er die Gastgeberseite nie berührt. Deshalb liest das Tool eine optionale Spalte <span class="mono">Vom Gast bezahlt</span>: steht dort der Gesamtbetrag aus der App, wird die Gebühr je Buchung exakt bestimmt und die enthaltene Umsatzsteuer abgezogen. Fehlt die Spalte, bleibt nur der Pauschalsatz — mit Hinweis, dass der Wert geschätzt ist.</p>
+  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Über 255 Buchungen aus sieben Jahren lag er durchgehend bei 3,6 % — anders als die Gast-Servicegebühr ist dieser Satz also stabil. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. Im Reservierungs-Export steht dieser Betrag nicht. Anders als die Gastgebergebühr ist er auch kein fester Prozentsatz — Airbnb staffelt ihn nach Dauer und Preis, belegt sind 14,0 % netto bei sieben und 9,8 % bei 42 Nächten. Aus der Auszahlung ist er nicht rekonstruierbar, weil er die Gastgeberseite nie berührt. Deshalb liest das Tool eine optionale Spalte <span class="mono">Vom Gast bezahlt</span>: steht dort der Gesamtbetrag aus der App, wird die Gebühr je Buchung exakt bestimmt und die enthaltene Umsatzsteuer abgezogen. Fehlt die Spalte, bleibt nur der Pauschalsatz — mit Hinweis, dass der Wert geschätzt ist.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
   <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Verrechnest du ein Frühstück gesondert, ist dessen Anteil nach § 12 Abs. 2 abzuziehen — das erkennt das Tool aus der CSV nicht, den Betrag musst du selbst mindern. Die Reinigungsgebühr gehört dagegen hinein (siehe oben) und darf nicht herausgerechnet werden. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
@@ -349,6 +349,18 @@ function compute(csvRows, opt){
     paid: findCol(head,['Vom Gast bezahlt','Gesamt vom Gast','Gast bezahlt',
                         'Total paid by guest','Guest paid','Paid by guest'])
   };
+  // Der Einnahmen-Export (Transaktionsverlauf) bringt ebenfalls Start- und
+  // Enddatum sowie eine Spalte „Bruttoeinkünfte“ mit und liefe sonst stumm
+  // durch — mit falschen Zahlen: Auszahlungszeilen ohne Datum, Langzeit-
+  // buchungen auf Monatsraten verteilt, und „Bruttoeinkünfte“ ist Auszahlung
+  // plus Netto-Gastgebergebühr, nicht das Entgelt des Gastes.
+  if(findCol(head,['Typ','Type'])>=0 && (findCol(head,['Bruttoeinkünfte'])>=0
+      || findCol(head,['Ausgezahlt'])>=0 || findCol(head,['Referenzcode'])>=0))
+    throw new Error('Das sieht nach dem Einnahmen-Export aus (Transaktionsverlauf). '
+      +'Gebraucht wird der Reservierungs-Export mit einer Zeile je Aufenthalt. '
+      +'Der Einnahmen-Export listet Zahlungen statt Aufenthalte, verteilt lange '
+      +'Buchungen auf Monatsraten und enthält laufende Aufenthalte nur anteilig.');
+
   if(ci.start<0||ci.end<0||ci.amount<0)
     throw new Error('Die Spalten Startdatum, Enddatum und Einkünfte wurden nicht gefunden. Gefundene Kopfzeile: '+head.join(' | '));
 
@@ -843,6 +855,19 @@ if(location.search.indexOf('selftest')>=0){
   t('Gast bezahlt','ohne Gastgebühr keine Pauschal-Warnung',
     compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),
       Object.assign({},BASE,{fee:3.6,gastfee:0})).warn.some(w=>/pauschal/.test(w)), false);
+
+  /* Der Einnahmen-Export darf nicht stumm durchlaufen — er hat Start- und
+     Enddatum und „Bruttoeinkünfte“ und käme sonst auf plausible falsche Zahlen. */
+  const EIN='Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,'
+    +'Buchungsdatum,Startdatum,Enddatum,Nächte,Gast,Inserat,Details,Referenzcode,'
+    +'Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
+    +'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr';
+  let abgewiesen='';
+  try{ compute(parseCSV(EIN+'\n,,Buchung,HM1,,07/19/2026,07/26/2026,7,G,,,,EUR,939.90,,35,10,,39.00,969.15,0.00,2026'),BASE); }
+  catch(e){ abgewiesen=e.message; }
+  t('CSV','Einnahmen-Export wird abgewiesen', /Einnahmen-Export/.test(abgewiesen), true);
+  t('CSV','Reservierungs-Export läuft weiter durch',
+    compute(parseCSV(HEAD+'\nT;;Gast;19.07.2026;26.07.2026;;939,90'),BASE).bookings.length, 1);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
