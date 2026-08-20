@@ -42,6 +42,12 @@ input[type=file]{display:none}
 select,input[type=number],input[type=text]{font-family:var(--mono);font-size:13px;padding:7px 9px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:2px}
 input[type=number]{width:92px}
 input[type=text]#konto{width:120px}
+/* Eingabe je Buchung. Leer = geschätzt über den Prozentsatz, befüllt = belegt. */
+.paid-in{font-family:var(--mono);font-size:12.5px;width:104px;padding:5px 7px;text-align:right;
+  border:1px dashed var(--line);background:#fff;color:var(--ink);border-radius:2px}
+.paid-in::placeholder{color:#9a9a9a;font-style:italic}
+.paid-in:focus{outline:2px solid var(--r50);outline-offset:-1px;border-style:solid}
+.paid-in.belegt{border-style:solid;border-color:var(--r50);background:#fbfffb}
 .lockrow{display:flex;align-items:center;gap:6px}
 #konto[readonly]{background:#F0F2F4;color:var(--ink-2);border-style:dashed;cursor:default}
 #konto:not([readonly]){border-color:var(--r50);box-shadow:0 0 0 2px rgba(24,106,87,.12)}
@@ -108,6 +114,10 @@ details p,details li{color:var(--ink-2)}
   tr{break-inside:avoid}
   .rate{color:#000!important;background:none!important;border:1px solid #999;padding:0 3px}
   .col-band,#pdfNote,.copy{display:none}
+  /* Im PDF steht der Wert, nicht das Formularfeld. */
+  .paid-in{border:none!important;background:none!important;padding:0;width:auto;
+    font-size:9pt;color:#000;text-align:right}
+  .paid-in::placeholder{color:#666}
   #rows-wrap{overflow:visible}
   td,th{padding:5px 6px}
   .note,.legend,.hint{color:#333}
@@ -227,6 +237,7 @@ details p,details li{color:var(--ink-2)}
     <button id="pdfMonths" class="ghost">Nur Monatsübersicht als PDF</button>
     <button id="dlMonths" class="ghost">Monatsübersicht als CSV</button>
     <button id="dlRows" class="ghost">Buchungsdetail als CSV</button>
+    <button id="dlPaid" class="ghost">Buchungen + Gastbeträge als CSV</button>
   </div>
   <div class="note" id="pdfNote">PDF: Der Druckdialog öffnet sich — dort „Als PDF sichern“ wählen.</div>
 
@@ -386,7 +397,8 @@ function compute(csvRows, opt){
     const code=(ci.code>=0?row[ci.code]:'')||('Zeile '+(r+1));
     const name=(ci.name>=0?row[ci.name]:'')||'';
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
-    const basis=parseMoney(row[ci.amount])*hostGross;
+    const netPay=parseMoney(row[ci.amount]);   // Auszahlung, wie sie in der CSV steht
+    const basis=netPay*hostGross;
     // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
     // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
     const ov=opt.paid ? opt.paid[code] : undefined;
@@ -450,7 +462,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,name,a,b,nights,amt,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,name,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(pauschal && opt.gastfee>0)
@@ -518,6 +530,11 @@ function bandHTML(segs){
   segs.forEach(s=>{ if(prev&&s!==prev) html+='<i class="tick"></i>'; html+='<i class="s'+s.slice(1)+'" style="flex:1"></i>'; prev=s; });
   return '<div class="band" title="'+segs.length+' Nächte">'+html+'</div>';
 }
+/* Was in der Buchungstabelle eingetippt wurde, Code → Rohtext. Bewusst nur im
+   Arbeitsspeicher: kein localStorage, kein sessionStorage. Dauerhaft wird es
+   über „Buchungsdetail als CSV“ — diese Datei lässt sich wieder einlesen. */
+const paidRaw = Object.create(null);
+
 function render(res, opt){
   document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
   renderQuota(res.bookings, opt.zaehl);
@@ -569,21 +586,40 @@ function render(res, opt){
   });
 
   const rt=document.getElementById('rows');
-  let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th><th>Aufteilung</th><th class="num">Ortstaxe</th></tr>';
+  // Fokus und Cursor merken: getippt wird in diese Tabelle, und sie wird bei
+  // jedem Tastendruck neu aufgebaut.
+  const act=document.activeElement;
+  const hadFocus=act&&act.classList&&act.classList.contains('paid-in') ? act.dataset.code : null;
+  const caret=hadFocus ? act.selectionStart : 0;
+
+  let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th>'
+    +'<th class="num col-paid">Vom Gast bezahlt</th><th>Aufteilung</th><th class="num">Ortstaxe</th></tr>';
   res.bookings.forEach(b=>{
     const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
     const parts=b.exempt
       ? '<span class="flag">über 3 Monate — befreit</span>'
       : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(round2(p.tax))+'</div>').join('');
+    // Beim Tippen den Rohtext stehen lassen, sonst wird „36“ sofort zu „36,00“.
+    const val = paidRaw[b.code]!==undefined ? paidRaw[b.code] : (b.paid ? fmt(b.paid) : '');
     g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
+      +'<td class="num col-paid"><input class="paid-in mono'+(b.paid?' belegt':'')+'" inputmode="decimal" '
+        +'data-code="'+esc(b.code)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
   });
   rt.innerHTML=g;
+  rt.querySelectorAll('.paid-in').forEach(el=>{
+    el.oninput=()=>{ paidRaw[el.dataset.code]=el.value; run(); };
+  });
+  if(hadFocus){
+    const el=rt.querySelector('.paid-in[data-code="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
+    if(el){ el.focus(); try{ el.setSelectionRange(caret,caret); }catch(e){} }
+  }
 
   const w=document.getElementById('warnings');
   w.innerHTML = res.warn.length
@@ -598,6 +634,15 @@ function render(res, opt){
       const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
       if(b.exempt) return [[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'].join(';')];
       return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))].join(';'));
+    }).join('\n');
+
+  // Round-Trip: dieselben Spaltennamen, die der Import erkennt. Diese Datei
+  // ist der Speicher für die Gastbeträge — beim nächsten Mal wird sie statt
+  // der rohen Airbnb-CSV hochgeladen und die Werte stehen wieder drin.
+  window.__csvPaid='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt\n'+
+    res.bookings.map(b=>{
+      const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+      return [b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.netPay),b.paid?fmt(b.paid):''].join(';');
     }).join('\n');
 }
 
@@ -614,14 +659,21 @@ function run(){
                gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
                uid:document.getElementById('uid').value,
                zaehl:document.getElementById('zaehl').value,
-               konto:(document.getElementById('konto').value||'').replace(/\s/g,'')};
+               konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
+               paid:(()=>{ const m=Object.create(null);
+                 for(const k in paidRaw) m[k]=parseMoney(paidRaw[k]);
+                 return m; })()};
     render(compute(parseCSV(lastText),opt),opt);
   }catch(e){
     err.textContent=e.message; err.classList.remove('hide');
     document.getElementById('out').classList.add('hide');
   }
 }
-function load(f){ const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8'); }
+function load(f){
+  // Neue Datei, neue Buchungen: alte Eingaben gehören nicht auf fremde Codes.
+  for(const k in paidRaw) delete paidRaw[k];
+  const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8');
+}
 
 const drop=document.getElementById('drop'), file=document.getElementById('file');
 drop.onclick=()=>file.click();
@@ -667,6 +719,7 @@ function download(name,data){
 }
 document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',window.__csvMonths||'');
 document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
+document.getElementById('dlPaid').onclick=()=>download('ortstaxe-gastbetraege.csv',window.__csvPaid||'');
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
@@ -894,6 +947,25 @@ if(location.search.indexOf('selftest')>=0){
   t('Echter Export','zweite Buchung 7 Nächte im Juli', echt.bookings[1].parts[0].month, '2026-07');
   t('Echter Export','keine Datums- oder Statuswarnung',
     echt.warn.filter(w=>/Datum|Status/.test(w)).length, 0);
+
+  /* Eingabe in der Buchungstabelle (opt.paid). Rangfolge: Eingabe vor
+     CSV-Spalte vor Prozentsatz; eine geleerte Eingabe ist bewusst 0. */
+  const mitEingabe=(gez,ov)=>compute(parseCSV(HEADP+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93;'+gez),
+    Object.assign({},OPTB,{paid:ov})).bookings[0];
+  t('Eingabe','Eingabe schlägt die CSV-Spalte',
+    round2(mitEingabe('1000,00',{T:3633.26}).amt), 3569.72);
+  t('Eingabe','geleerte Eingabe fällt auf den Prozentsatz',
+    round2(mitEingabe('3633,26',{T:0}).amt), 3707.28);
+  t('Eingabe','ohne Eingabe bleibt die CSV-Spalte',
+    round2(mitEingabe('3633,26',{}).amt), 3569.72);
+  t('Eingabe','ohne beides greift der Prozentsatz',
+    round2(mitEingabe('',{}).amt), 3707.28);
+  t('Eingabe','netPay bleibt die rohe Auszahlung',
+    round2(mitEingabe('3633,26',{}).netPay), 3134.93);
+  t('Eingabe','paid ist der tatsächlich verwendete Gastbetrag',
+    round2(mitEingabe('',{T:3633.26}).paid), 3633.26);
+  t('Eingabe','Eingabe zählt auch für den Meldemonat',
+    round2(mitEingabe('',{T:3633.26}).parts[1].tax), 125.47);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
