@@ -367,7 +367,10 @@ function compute(csvRows, opt){
     if(/storn|cancel|abgelehnt|declin|abgelaufen|expired|anfrage|inquir|ausstehend|pending|zeitüberschreitung|timed ?out/i.test(st)){
       warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.'); continue;
     }
-    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past/i.test(st))
+    // Der deutsche Export schreibt je nach Zeitpunkt „Aktueller Gast“, „Früherer
+    // Gast“ oder „Gast bewertet“ — alles stattgefundene Aufenthalte. Ohne sie hier
+    // warnt das Tool auf jeder Zeile und die Warnliste wird wertlos.
+    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past|aktueller gast|currently hosting|fr(ü|ue)herer|bewertet|reviewed/i.test(st))
       warn.push(code+' ('+name+') — unbekannter Status „'+st+'“, wird als bestätigt gerechnet.');
     if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
     const nights=Math.round((b-a)/86400000);
@@ -713,6 +716,10 @@ if(location.search.indexOf('selftest')>=0){
     t('Status','„'+s+'“ wird gezählt', buchung('05.08.2026','06.08.2026','100',s).bookings.length, 1));
   t('Status','unbekannter Status warnt',
     buchung('05.08.2026','06.08.2026','100','Reserviert').warn.some(w=>/unbekannter Status/.test(w)), true);
+  /* Werte aus einem echten deutschen Export — dürfen nicht warnen */
+  ['Aktueller Gast','Früherer Gast','Gast bewertet','Currently hosting','Past guest'].forEach(s=>
+    t('Status','„'+s+'“ warnt nicht',
+      buchung('05.08.2026','06.08.2026','100',s).warn.length, 0));
 
   /* Beträge */
   t('Beträge','negativer Betrag warnt',
@@ -731,12 +738,14 @@ if(location.search.indexOf('selftest')>=0){
   t('Hochrechnung','Gastgebühr erhöht die Abgabe um 14 %',
     round2(mitGeb(3.6,14).bookings[0].tax), round2(round2(mitGeb(3.6,0).bookings[0].tax)*1.14));
 
-  /* Gegenprobe an einer echten Airbnb-Abrechnung, Anreise 30.04.2026, 7 Nächte.
-     Die Abrechnung weist aus: Nächtigung 936,00 + Reinigung 39,00 = 975,00, davon
-     3 % Gastgebergebühr + 20 % USt = 35,10 → Auszahlung 939,90. Gast-Servicegebühr
-     163,80 brutto = 136,50 netto = 14,0 % von 975,00. Bemessungsgrundlage 1.111,50.
-     Prüft die Hochrechnung gegen belegte Zahlen statt gegen eine Annahme. */
-  const beleg=compute(parseCSV(HEAD+'\nT;;Gast;30.04.2026;07.05.2026;;939,90'),
+  /* Gegenprobe an einer echten Airbnb-Abrechnung: Aufenthalt 19.07.–26.07.2026,
+     7 Nächte. Die Abrechnung weist aus: Nächtigung 936,00 + Reinigung 39,00 =
+     975,00, davon 3 % Gastgebergebühr + 20 % USt = 35,10 → Auszahlung 939,90.
+     Gast-Servicegebühr 163,80 brutto = 136,50 netto = 14,0 % von 975,00.
+     Bemessungsgrundlage 1.111,50, Meldemonat 07/2026 zu 5 %.
+     Achtung beim Nachstellen: „Gebucht“ (30.04.2026) ist das Buchungsdatum,
+     nicht die Anreise — für die Ortstaxe zählt allein der Aufenthalt. */
+  const beleg=compute(parseCSV(HEAD+'\nT;;Gast;19.07.2026;26.07.2026;;939,90'),
     Object.assign({},BASE,{fee:3.6,gastfee:14})).bookings[0];
   t('Abrechnung','939,90 € Auszahlung → 975,00 € vor Gast-Servicegebühr',
     round2(939.90/(1-0.036)), 975);
@@ -744,11 +753,28 @@ if(location.search.indexOf('selftest')>=0){
     round2(163.80/1.2/975*100), 14);
   t('Abrechnung','Bemessungsgrundlage 1.111,50 €', round2(beleg.amt), 1111.5);
   t('Abrechnung','7 Nächte', beleg.nights, 7);
-  t('Abrechnung','Ortstaxe gesamt 30,78 €', round2(beleg.tax), 30.78);
-  t('Abrechnung','April 2026 — 1 Nacht, 4,40 €', round2(beleg.parts[0].tax), 4.4);
-  t('Abrechnung','Mai 2026 — 6 Nächte, 26,38 €', round2(beleg.parts[1].tax), 26.38);
-  t('Abrechnung','Monatssummen ergeben die Gesamtabgabe',
-    round2(round2(beleg.parts[0].tax)+round2(beleg.parts[1].tax)), 30.78);
+  t('Abrechnung','liegt nach dem Stichtag, also 5 %', beleg.parts[0].reg, 'r50');
+  t('Abrechnung','ein einziger Meldemonat 07/2026', beleg.parts[0].month, '2026-07');
+  t('Abrechnung','Ortstaxe gesamt 52,93 €', round2(beleg.tax), 52.93);
+
+  /* Aufenthalt über drei Meldemonate — Anreise 28.07., Abreise 08.09.2026.
+     Die Nächteaufteilung hängt nicht von den Gebührensätzen ab, deshalb hier
+     geprüft: 4 Nächte Juli, 31 August, 7 September. */
+  const spanne=compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),
+    Object.assign({},BASE,{fee:3.6,gastfee:14})).bookings[0];
+  t('Abrechnung','42 Nächte über drei Monate', spanne.nights, 42);
+  t('Abrechnung','drei Meldemonate', spanne.parts.length, 3);
+  t('Abrechnung','Juli 2026 — 4 Nächte', spanne.parts[0].month+'/'+spanne.parts[0].nights, '2026-07/4');
+  t('Abrechnung','August 2026 — 31 Nächte', spanne.parts[1].month+'/'+spanne.parts[1].nights, '2026-08/31');
+  t('Abrechnung','September 2026 — 7 Nächte', spanne.parts[2].month+'/'+spanne.parts[2].nights, '2026-09/7');
+  /* Gemeldet und bezahlt wird je Meldemonat, also ist die Summe der gerundeten
+     Monatswerte der maßgebliche Betrag. Der ungerundete Gesamtwert der Buchung
+     kann davon einen Cent abweichen — hier 176,53 gegen 176,54. Beide Werte sind
+     festgehalten, damit eine Änderung der Rundung auffällt. */
+  t('Abrechnung','Summe der Meldemonate 176,53 €',
+    round2(spanne.parts.reduce((s,x)=>s+round2(x.tax),0)), 176.53);
+  t('Abrechnung','ungerundeter Gesamtwert 176,54 € — ein Cent Rundungsdifferenz',
+    round2(spanne.tax), 176.54);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
