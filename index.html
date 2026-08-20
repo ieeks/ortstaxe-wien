@@ -39,6 +39,9 @@ h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-si
 .drop strong{font-family:var(--cond);font-size:19px;text-transform:uppercase;letter-spacing:.04em;display:block}
 .drop span{font-size:13px;color:var(--ink-2)}
 input[type=file]{display:none}
+/* Solange Getipptes nicht exportiert ist, muss der Knopf auffallen. */
+button.offen{border-color:var(--flag);color:var(--flag)}
+button.offen::after{content:' •'}
 .opts{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end;margin-top:16px;padding:16px 18px}
 .opt{display:flex;flex-direction:column;gap:5px}
 .opt label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
@@ -244,7 +247,10 @@ details p,details li{color:var(--ink-2)}
     <button id="dlMonths" class="ghost">Monatsübersicht als CSV</button>
     <button id="dlRows" class="ghost">Buchungsdetail als CSV</button>
     <button id="dlPaid" class="ghost">Buchungen + Gastbeträge als CSV</button>
+    <button id="ldPaid" class="ghost">Gastbeträge laden</button>
+    <input type="file" id="paidFile" accept=".csv,text/csv">
   </div>
+  <div class="note hide" id="paidInfo"></div>
   <div class="note" id="pdfNote">PDF: Der Druckdialog öffnet sich — dort „Als PDF sichern“ wählen.</div>
 
   <div id="warnings"></div>
@@ -567,6 +573,26 @@ const paidRaw = Object.create(null);
    wären sie beim nächsten Upload der rohen Airbnb-CSV weg, obwohl dieselben
    Buchungen drinstehen. Bereits Eingetipptes bleibt unangetastet — auch eine
    bewusst geleerte Eingabe, die als leerer String hinterlegt ist. */
+/* Liest nur die Gastbeträge aus einer zuvor exportierten Datei. Rührt die
+   Buchungsliste nicht an — die kommt immer aus dem Airbnb-Export, damit die
+   Reihenfolge der Uploads nichts kaputt macht. */
+function leseGastbetraege(csvRows){
+  const head=csvRows[0]||[];
+  const ci={ code: findCol(head,['Bestätigungs-Code','Confirmation code','Code']),
+             paid: findCol(head,['Vom Gast bezahlt','Gesamt vom Gast','Gast bezahlt',
+                        'Total paid by guest','Guest paid','Paid by guest']) };
+  if(ci.code<0||ci.paid<0)
+    throw new Error('In dieser Datei fehlen die Spalten „Bestätigungs-Code“ und „Vom Gast bezahlt“. '
+      +'Gemeint ist die Datei aus dem Knopf „Buchungen + Gastbeträge als CSV“. '
+      +'Gefundene Kopfzeile: '+head.join(' | '));
+  const map=Object.create(null);
+  for(let i=1;i<csvRows.length;i++){
+    const code=(csvRows[i][ci.code]||'').trim(), wert=(csvRows[i][ci.paid]||'').trim();
+    if(code&&wert) map[code]=wert;
+  }
+  return map;
+}
+
 function merkeGastbetraege(bookings, ziel){
   bookings.forEach(b=>{ if(ziel[b.code]===undefined && b.paid) ziel[b.code]=fmt(b.paid); });
   return ziel;
@@ -651,7 +677,7 @@ function render(res, opt){
   });
   rt.innerHTML=g;
   rt.querySelectorAll('.paid-in').forEach(el=>{
-    el.oninput=()=>{ paidRaw[el.dataset.code]=el.value; run(); };
+    el.oninput=()=>{ paidRaw[el.dataset.code]=el.value; ungespeichert=true; run(); };
   });
   if(hadFocus){
     const el=rt.querySelector('.paid-in[data-code="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
@@ -663,6 +689,7 @@ function render(res, opt){
     ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'
     : '';
   document.getElementById('out').classList.remove('hide');
+  markiereSpeicherstand();
 
   window.__csvMonths='Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
     res.months.map(m=>[monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),fmt(round2(m.tax)),opt.konto+m.month.split('-')[1]+m.month.split('-')[0]].join(';')).join('\n');
@@ -685,6 +712,17 @@ function render(res, opt){
 
 /* --- Steuerung --- */
 let lastText=null;
+/* Getipptes lebt nur in dieser Sitzung. Wer die Seite verlässt, ohne zu
+   exportieren, verliert es — deshalb ein sichtbarer Marker und die Rückfrage
+   des Browsers. */
+let ungespeichert=false;
+function markiereSpeicherstand(){
+  document.getElementById('dlPaid').classList.toggle('offen', ungespeichert);
+}
+window.addEventListener('beforeunload', e=>{
+  if(!ungespeichert) return;
+  e.preventDefault(); e.returnValue='';
+});
 function run(){
   if(!lastText) return;
   const err=document.getElementById('error');
@@ -761,7 +799,36 @@ function download(name,data){
 }
 document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',window.__csvMonths||'');
 document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
-document.getElementById('dlPaid').onclick=()=>download('ortstaxe-gastbetraege.csv',window.__csvPaid||'');
+document.getElementById('dlPaid').onclick=()=>{
+  download('ortstaxe-gastbetraege.csv',window.__csvPaid||'');
+  ungespeichert=false; markiereSpeicherstand();
+};
+
+/* Gastbeträge aus einer früheren Sitzung nachladen */
+const paidFile=document.getElementById('paidFile');
+document.getElementById('ldPaid').onclick=()=>paidFile.click();
+paidFile.onchange=e=>{ if(e.target.files[0]) ladeGastbetraege(e.target.files[0]); e.target.value=''; };
+function ladeGastbetraege(f){
+  const info=document.getElementById('paidInfo'), err=document.getElementById('error');
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      err.classList.add('hide');
+      const map=leseGastbetraege(parseCSV(r.result));
+      const codes=Object.keys(map);
+      codes.forEach(c=>{ paidRaw[c]=map[c]; });
+      run();
+      const treffer=[...document.querySelectorAll('.paid-in')].filter(x=>map[x.dataset.code]!==undefined).length;
+      const offen=[...document.querySelectorAll('.paid-in')].filter(x=>x.value==='').length;
+      info.textContent=codes.length+' Gastbeträge gelesen · '+treffer+' den angezeigten Buchungen zugeordnet'
+        +(offen?' · '+offen+' Buchung'+(offen===1?'':'en')+' noch ohne Betrag':' · alle Buchungen belegt');
+      info.classList.remove('hide');
+    }catch(ex){
+      err.textContent=ex.message; err.classList.remove('hide'); info.classList.add('hide');
+    }
+  };
+  r.readAsText(f,'utf-8');
+}
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
@@ -1033,6 +1100,27 @@ if(location.search.indexOf('selftest')>=0){
   const merk4=Object.create(null);
   merkeGastbetraege(compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),OPTB).bookings, merk4);
   t('Gedächtnis','ohne Spalte wird nichts gemerkt', merk4.T, undefined);
+
+  /* Gastbeträge aus einer früher exportierten Datei nachladen. Die Datei bringt
+     nur Beträge mit, nie die Buchungsliste — sonst entschiede die Reihenfolge
+     der Uploads darüber, welche Buchungen überhaupt erscheinen. */
+  const EXP='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const gelesen=leseGastbetraege(parseCSV(EXP
+    +'\nHMJWXDTWBD;Charles;28.07.2026;08.09.2026;42;3 134,93;3 633,26'
+    +'\nHMBC9HMQQA;Pia;19.07.2026;26.07.2026;7;939,90;1 138,80'
+    +'\nHM35HQ2DTM;Ruth;18.06.2026;19.07.2026;31;1 585,59;'));
+  t('Nachladen','zwei Beträge gelesen', Object.keys(gelesen).length, 2);
+  t('Nachladen','Betrag am richtigen Code', gelesen.HMJWXDTWBD, '3 633,26');
+  t('Nachladen','leere Zelle wird übersprungen', gelesen.HM35HQ2DTM, undefined);
+  t('Nachladen','gelesener Wert rechnet wie eine Eingabe',
+    round2(compute(parseCSV(HEAD+'\nHMJWXDTWBD;;Gast;28.07.2026;08.09.2026;;3134,93'),
+      Object.assign({},OPTB,{paid:{HMJWXDTWBD:parseMoney(gelesen.HMJWXDTWBD)}})).bookings[0].amt), 3569.72);
+  t('Nachladen','englische Kopfzeile',
+    Object.keys(leseGastbetraege(parseCSV('Confirmation code,Total paid by guest\nABC,"1,138.80"'))).length, 1);
+  t('Nachladen','ohne die nötigen Spalten kommt ein Fehler', (()=>{
+    try{ leseGastbetraege(parseCSV('Startdatum;Enddatum\n01.01.2026;02.01.2026')); return 'kein Fehler'; }
+    catch(e){ return /Bestätigungs-Code/.test(e.message) ? 'Fehler mit Hinweis' : 'Fehler ohne Hinweis'; }
+  })(), 'Fehler mit Hinweis');
 
   /* 90-Tage-Zähler der Bauordnung. Bisher ungetestet — die echten Aufenthalte
      eines Jahres, Stichtag 20.08.2026, damit verbraucht und fest gebucht
