@@ -387,7 +387,10 @@ function compute(csvRows, opt){
     const name=(ci.name>=0?row[ci.name]:'')||'';
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
     const basis=parseMoney(row[ci.amount])*hostGross;
-    const paid=ci.paid>=0 ? parseMoney(row[ci.paid]) : 0;
+    // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
+    // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
+    const ov=opt.paid ? opt.paid[code] : undefined;
+    const paid=ov!==undefined ? ov : (ci.paid>=0 ? parseMoney(row[ci.paid]) : 0);
     let amt;
     if(paid>0 && paid+0.005>=basis){
       amt = basis + (paid-basis)/USTF_SERVICE;   // Gast-Servicegebühr brutto → netto
