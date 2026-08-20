@@ -21,8 +21,21 @@ Die CSV wird ausschließlich im Browser verarbeitet und nirgendwo hochgeladen.
      Auszahlung auf das Gastentgelt
 4. Ergebnis als PDF drucken oder als CSV herunterladen
 
-Erkannt werden deutsche und englische Spaltenüberschriften. Stornierte Buchungen
-werden übersprungen, Aufenthalte über drei Monate als befreit mit 0 ausgewiesen.
+Erkannt werden deutsche und englische Spaltenüberschriften. Stornierte, abgelehnte,
+abgelaufene und noch nicht bestätigte Buchungen werden übersprungen, Aufenthalte über
+drei Monate als befreit mit 0 ausgewiesen.
+
+## Selbsttest
+
+`index.html?selftest` rechnet rund fünfzig Prüfungen gegen dieselben Funktionen, die
+auch die Meldung erstellen — Schlüsselzahlen, beide Stichtagsgrenzen, Meldemonat,
+Drei-Monats-Befreiung, Rundung, Statusfilter und CSV-Parsing. Kein Build-Schritt,
+keine zweite Datei.
+
+Fälle mit „!“ dokumentieren einen bekannten, noch nicht behobenen Bug: sie sind
+erwartet rot und schalten auf „△“ um, sobald der Fix greift — dann gehört die
+Erwartung im Testfall nachgezogen. Vor jeder Änderung an der Rechnung einmal
+aufrufen; „0 fehlgeschlagen“ ist die Bedingung zum Commit.
 
 ## Rechenlogik
 
