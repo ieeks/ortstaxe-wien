@@ -42,6 +42,12 @@ input[type=file]{display:none}
 select,input[type=number],input[type=text]{font-family:var(--mono);font-size:13px;padding:7px 9px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:2px}
 input[type=number]{width:92px}
 input[type=text]#konto{width:120px}
+/* Eingabe je Buchung. Leer = geschätzt über den Prozentsatz, befüllt = belegt. */
+.paid-in{font-family:var(--mono);font-size:12.5px;width:104px;padding:5px 7px;text-align:right;
+  border:1px dashed var(--line);background:#fff;color:var(--ink);border-radius:2px}
+.paid-in::placeholder{color:#9a9a9a;font-style:italic}
+.paid-in:focus{outline:2px solid var(--r50);outline-offset:-1px;border-style:solid}
+.paid-in.belegt{border-style:solid;border-color:var(--r50);background:#fbfffb}
 .lockrow{display:flex;align-items:center;gap:6px}
 #konto[readonly]{background:#F0F2F4;color:var(--ink-2);border-style:dashed;cursor:default}
 #konto:not([readonly]){border-color:var(--r50);box-shadow:0 0 0 2px rgba(24,106,87,.12)}
@@ -108,6 +114,10 @@ details p,details li{color:var(--ink-2)}
   tr{break-inside:avoid}
   .rate{color:#000!important;background:none!important;border:1px solid #999;padding:0 3px}
   .col-band,#pdfNote,.copy{display:none}
+  /* Im PDF steht der Wert, nicht das Formularfeld. */
+  .paid-in{border:none!important;background:none!important;padding:0;width:auto;
+    font-size:9pt;color:#000;text-align:right}
+  .paid-in::placeholder{color:#666}
   #rows-wrap{overflow:visible}
   td,th{padding:5px 6px}
   .note,.legend,.hint{color:#333}
@@ -181,6 +191,17 @@ details p,details li{color:var(--ink-2)}
   im Sinne des § 12 WTFG. <strong>In der Reservierungs-CSV steht dieser Betrag nicht</strong> —
   der Prozentsatz muss aus deiner Airbnb-Abrechnung kommen. Nutzt du das Modell, bei dem du als
   Gastgeber die gesamte Gebühr trägst, gibt es keine Gast-Servicegebühr: dann hier 0 eintragen.
+  <br><br>
+  <strong>Der Prozentsatz ist nur die Notlösung.</strong> Airbnb staffelt diese Gebühr nach Dauer
+  und Preis — bei sieben Nächten waren es 14,0 % netto, bei 42 Nächten nur 9,8 %. Ein fester Satz
+  trifft also höchstens zufällig, und aus der Auszahlung lässt sich der richtige nicht herleiten:
+  die Gast-Servicegebühr berührt die Gastgeberseite nie.
+  <br><br>
+  <strong>Genauer geht es mit einer Spalte in der CSV.</strong> Ergänze eine Spalte
+  <span class="mono">Vom Gast bezahlt</span> und trage dort den Gesamtbetrag ein, den die App unter
+  <em>Verdienste → Vom Gast bezahlt</em> als große Zahl zeigt. Wo sie befüllt ist, rechnet das Tool
+  exakt und ignoriert den Prozentsatz — die enthaltene Umsatzsteuer zieht es selbst ab. Wo sie leer
+  bleibt, greift der Satz, und du bekommst einen Hinweis darauf.
 </div>
 
 <div id="error" class="err hide"></div>
@@ -216,6 +237,7 @@ details p,details li{color:var(--ink-2)}
     <button id="pdfMonths" class="ghost">Nur Monatsübersicht als PDF</button>
     <button id="dlMonths" class="ghost">Monatsübersicht als CSV</button>
     <button id="dlRows" class="ghost">Buchungsdetail als CSV</button>
+    <button id="dlPaid" class="ghost">Buchungen + Gastbeträge als CSV</button>
   </div>
   <div class="note" id="pdfNote">PDF: Der Druckdialog öffnet sich — dort „Als PDF sichern“ wählen.</div>
 
@@ -232,10 +254,10 @@ details p,details li{color:var(--ink-2)}
   </ul>
   <p><strong>Rechtsgrundlage der Erhöhung:</strong> LGBl. für Wien Nr. 2/2026, ausgegeben am 23.02.2026. Artikel I ersetzt in § 14 WTFG „3,2 vH“ durch „5 vH“ (Z 2) und anschließend „5 vH“ durch „8 vH“ (Z 3). Artikel II setzt Z 1 und 2 mit 01.07.2026 in Kraft, Z 3 mit 01.07.2027. Beide Stufen sind damit bereits kundgemachtes Recht, die zweite ist keine bloße Ankündigung. Eine Übergangsregelung für vorher getätigte Buchungen enthält das Gesetz nicht — maßgeblich ist, wann die Nacht stattfindet, nicht wann gebucht wurde.</p>
   <p><strong>Bemessungsgrundlage:</strong> § 12 Abs. 1 WTFG: „Bemessungsgrundlage ist das Entgelt für den Aufenthalt im Sinne des § 11.“ Nicht dazu gehören nach Abs. 2 nur die Umsatzsteuer und das Entgelt für das Frühstück im ortsüblichen Ausmaß. Bis 30.06.2026 kam der 11 %-Pauschalabzug nach § 12 Abs. 2 lit. c dazu; diese lit. c ist durch Art. I Z 1 LGBl. für Wien Nr. 2/2026 mit 01.07.2026 entfallen — die Schlüsselzahl 2,7691 % der MA 6 rechnet ihn noch ein.</p>
-  <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
-  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. In der CSV steht dieser Betrag nicht, er muss als Prozentsatz eingegeben werden.</p>
+  <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Ob du selbst putzt oder eine Reinigungskraft bezahlst, ändert daran nichts — die Bemessungsgrundlage kennt keine Kostenseite, maßgeblich ist allein, was der Gast aufwendet. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
+  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Über 255 Buchungen aus sieben Jahren lag er durchgehend bei 3,6 % — anders als die Gast-Servicegebühr ist dieser Satz also stabil. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. Im Reservierungs-Export steht dieser Betrag nicht. Anders als die Gastgebergebühr ist er auch kein fester Prozentsatz — Airbnb staffelt ihn nach Dauer und Preis, belegt sind 14,0 % netto bei sieben und 9,8 % bei 42 Nächten. Aus der Auszahlung ist er nicht rekonstruierbar, weil er die Gastgeberseite nie berührt. Deshalb liest das Tool eine optionale Spalte <span class="mono">Vom Gast bezahlt</span>: steht dort der Gesamtbetrag aus der App, wird die Gebühr je Buchung exakt bestimmt und die enthaltene Umsatzsteuer abgezogen. Fehlt die Spalte, bleibt nur der Pauschalsatz — mit Hinweis, dass der Wert geschätzt ist.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
-  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
+  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Verrechnest du ein Frühstück gesondert, ist dessen Anteil nach § 12 Abs. 2 abzuziehen — das erkennt das Tool aus der CSV nicht, den Betrag musst du selbst mindern. Die Reinigungsgebühr gehört dagegen hinein (siehe oben) und darf nicht herausgerechnet werden. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
 
 </div>
@@ -332,16 +354,41 @@ function compute(csvRows, opt){
     end: findCol(head,['Enddatum','End date','Checkout']),
     nights: findCol(head,['Anzahl der Nächte','# of nights','Nights']),
     amount: findCol(head,['Einkünfte','Bruttoeinkünfte','Earnings','Gross earnings','Amount']),
-    listing: findCol(head,['Inserat','Listing'])
+    listing: findCol(head,['Inserat','Listing']),
+    // Optionale Spalte, selbst gepflegt: der Betrag aus der App unter
+    // „Verdienste → Vom Gast bezahlt“. Ist er da, wird exakt gerechnet.
+    paid: findCol(head,['Vom Gast bezahlt','Gesamt vom Gast','Gast bezahlt',
+                        'Total paid by guest','Guest paid','Paid by guest'])
   };
+  // Der Einnahmen-Export (Transaktionsverlauf) bringt ebenfalls Start- und
+  // Enddatum sowie eine Spalte „Bruttoeinkünfte“ mit und liefe sonst stumm
+  // durch — mit falschen Zahlen: Auszahlungszeilen ohne Datum, Langzeit-
+  // buchungen auf Monatsraten verteilt, und „Bruttoeinkünfte“ ist Auszahlung
+  // plus Netto-Gastgebergebühr, nicht das Entgelt des Gastes.
+  if(findCol(head,['Typ','Type'])>=0 && (findCol(head,['Bruttoeinkünfte'])>=0
+      || findCol(head,['Ausgezahlt'])>=0 || findCol(head,['Referenzcode'])>=0))
+    throw new Error('Das sieht nach dem Einnahmen-Export aus (Transaktionsverlauf). '
+      +'Gebraucht wird der Reservierungs-Export mit einer Zeile je Aufenthalt. '
+      +'Der Einnahmen-Export listet Zahlungen statt Aufenthalte, verteilt lange '
+      +'Buchungen auf Monatsraten und enthält laufende Aufenthalte nur anteilig.');
+
   if(ci.start<0||ci.end<0||ci.amount<0)
     throw new Error('Die Spalten Startdatum, Enddatum und Einkünfte wurden nicht gefunden. Gefundene Kopfzeile: '+head.join(' | '));
 
   // Von der Auszahlung auf das, was der Gast aufwendet: erst die einbehaltene
   // Gastgebergebühr zurückrechnen, dann die Gast-Servicegebühr aufschlagen —
   // beide sind nach MA-6-FAQ 16 Bestandteil des Beherbergungsentgelts.
-  const gross = (1/(1 - (opt.fee/100))) * (1 + (opt.gastfee/100));
+  // Die Gastgebergebühr ist ein fixer Prozentsatz und lässt sich aus der
+  // Auszahlung exakt zurückrechnen. Die Gast-Servicegebühr nicht: Airbnb
+  // staffelt sie nach Dauer und Preis — belegt sind 14,0 % netto bei sieben
+  // Nächten und 9,8 % bei 42. Aus der Auszahlung ist sie nicht herleitbar,
+  // weil sie die Gastgeberseite nie berührt. Steht „Vom Gast bezahlt“ in der
+  // CSV, wird sie je Buchung daraus bestimmt; sonst bleibt nur der Pauschalsatz.
+  const hostGross = 1/(1 - (opt.fee/100));
+  const guestF    = 1 + (opt.gastfee/100);
+  const USTF_SERVICE = 1.20;   // Airbnb verrechnet 20 % österreichische USt auf die Servicegebühr
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
+  let pauschal=0;
   const bookings=[], months={}, warn=[], seen=Object.create(null);
 
   for(let r=1;r<csvRows.length;r++){
@@ -350,7 +397,21 @@ function compute(csvRows, opt){
     const code=(ci.code>=0?row[ci.code]:'')||('Zeile '+(r+1));
     const name=(ci.name>=0?row[ci.name]:'')||'';
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
-    const amt=parseMoney(row[ci.amount])*gross;
+    const netPay=parseMoney(row[ci.amount]);   // Auszahlung, wie sie in der CSV steht
+    const basis=netPay*hostGross;
+    // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
+    // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
+    const ov=opt.paid ? opt.paid[code] : undefined;
+    const paid=ov!==undefined ? ov : (ci.paid>=0 ? parseMoney(row[ci.paid]) : 0);
+    let amt;
+    if(paid>0 && paid+0.005>=basis){
+      amt = basis + (paid-basis)/USTF_SERVICE;   // Gast-Servicegebühr brutto → netto
+    }else{
+      if(paid>0) warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ('+fmt(paid)
+        +' €) liegt unter dem hochgerechneten Entgelt ('+fmt(basis)
+        +' €). Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
+      amt = basis*guestF; pauschal++;
+    }
 
     // Nur Bestätigtes ist eine Nächtigung. Anfragen, ausstehende und abgelaufene
     // Buchungen haben nie stattgefunden und gehören nicht in die Meldung.
@@ -358,7 +419,12 @@ function compute(csvRows, opt){
     if(/storn|cancel|abgelehnt|declin|abgelaufen|expired|anfrage|inquir|ausstehend|pending|zeitüberschreitung|timed ?out/i.test(st)){
       warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.'); continue;
     }
-    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past/i.test(st))
+    // Der deutsche Export schreibt je nach Zeitpunkt „Aktueller Gast“, „Früherer
+    // Gast“ oder „Gast bewerten – läuft bald ab“ — alles stattgefundene
+    // Aufenthalte. Ohne sie hier warnt das Tool auf jeder Zeile und die
+    // Warnliste wird wertlos. „bewert“ deckt bewerten wie bewertet ab; was
+    // wirklich nicht stattgefunden hat, ist oben schon aussortiert.
+    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past|aktueller gast|currently hosting|fr(ü|ue)herer|bewert|review/i.test(st))
       warn.push(code+' ('+name+') — unbekannter Status „'+st+'“, wird als bestätigt gerechnet.');
     if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
     const nights=Math.round((b-a)/86400000);
@@ -396,9 +462,14 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,name,a,b,nights,amt,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,name,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
+  if(pauschal && opt.gastfee>0)
+    warn.push(pauschal+(pauschal===1?' Buchung wurde':' Buchungen wurden')+' mit pauschal '
+      +opt.gastfee+' % Gast-Servicegebühr gerechnet — Airbnb staffelt diese Gebühr nach Dauer '
+      +'und Preis, der Wert ist also geschätzt. Für eine exakte Meldung die Spalte '
+      +'„Vom Gast bezahlt“ in die CSV aufnehmen.');
   return {bookings,months:Object.values(months).sort((x,y)=>x.month.localeCompare(y.month)||x.reg.localeCompare(y.reg)),warn};
 }
 
@@ -459,6 +530,11 @@ function bandHTML(segs){
   segs.forEach(s=>{ if(prev&&s!==prev) html+='<i class="tick"></i>'; html+='<i class="s'+s.slice(1)+'" style="flex:1"></i>'; prev=s; });
   return '<div class="band" title="'+segs.length+' Nächte">'+html+'</div>';
 }
+/* Was in der Buchungstabelle eingetippt wurde, Code → Rohtext. Bewusst nur im
+   Arbeitsspeicher: kein localStorage, kein sessionStorage. Dauerhaft wird es
+   über „Buchungsdetail als CSV“ — diese Datei lässt sich wieder einlesen. */
+const paidRaw = Object.create(null);
+
 function render(res, opt){
   document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
   renderQuota(res.bookings, opt.zaehl);
@@ -510,21 +586,40 @@ function render(res, opt){
   });
 
   const rt=document.getElementById('rows');
-  let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th><th>Aufteilung</th><th class="num">Ortstaxe</th></tr>';
+  // Fokus und Cursor merken: getippt wird in diese Tabelle, und sie wird bei
+  // jedem Tastendruck neu aufgebaut.
+  const act=document.activeElement;
+  const hadFocus=act&&act.classList&&act.classList.contains('paid-in') ? act.dataset.code : null;
+  const caret=hadFocus ? act.selectionStart : 0;
+
+  let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th>'
+    +'<th class="num col-paid">Vom Gast bezahlt</th><th>Aufteilung</th><th class="num">Ortstaxe</th></tr>';
   res.bookings.forEach(b=>{
     const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
     const parts=b.exempt
       ? '<span class="flag">über 3 Monate — befreit</span>'
       : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(round2(p.tax))+'</div>').join('');
+    // Beim Tippen den Rohtext stehen lassen, sonst wird „36“ sofort zu „36,00“.
+    const val = paidRaw[b.code]!==undefined ? paidRaw[b.code] : (b.paid ? fmt(b.paid) : '');
     g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
+      +'<td class="num col-paid"><input class="paid-in mono'+(b.paid?' belegt':'')+'" inputmode="decimal" '
+        +'data-code="'+esc(b.code)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
   });
   rt.innerHTML=g;
+  rt.querySelectorAll('.paid-in').forEach(el=>{
+    el.oninput=()=>{ paidRaw[el.dataset.code]=el.value; run(); };
+  });
+  if(hadFocus){
+    const el=rt.querySelector('.paid-in[data-code="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
+    if(el){ el.focus(); try{ el.setSelectionRange(caret,caret); }catch(e){} }
+  }
 
   const w=document.getElementById('warnings');
   w.innerHTML = res.warn.length
@@ -539,6 +634,15 @@ function render(res, opt){
       const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
       if(b.exempt) return [[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'].join(';')];
       return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))].join(';'));
+    }).join('\n');
+
+  // Round-Trip: dieselben Spaltennamen, die der Import erkennt. Diese Datei
+  // ist der Speicher für die Gastbeträge — beim nächsten Mal wird sie statt
+  // der rohen Airbnb-CSV hochgeladen und die Werte stehen wieder drin.
+  window.__csvPaid='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt\n'+
+    res.bookings.map(b=>{
+      const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
+      return [b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.netPay),b.paid?fmt(b.paid):''].join(';');
     }).join('\n');
 }
 
@@ -555,14 +659,21 @@ function run(){
                gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
                uid:document.getElementById('uid').value,
                zaehl:document.getElementById('zaehl').value,
-               konto:(document.getElementById('konto').value||'').replace(/\s/g,'')};
+               konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
+               paid:(()=>{ const m=Object.create(null);
+                 for(const k in paidRaw) m[k]=parseMoney(paidRaw[k]);
+                 return m; })()};
     render(compute(parseCSV(lastText),opt),opt);
   }catch(e){
     err.textContent=e.message; err.classList.remove('hide');
     document.getElementById('out').classList.add('hide');
   }
 }
-function load(f){ const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8'); }
+function load(f){
+  // Neue Datei, neue Buchungen: alte Eingaben gehören nicht auf fremde Codes.
+  for(const k in paidRaw) delete paidRaw[k];
+  const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8');
+}
 
 const drop=document.getElementById('drop'), file=document.getElementById('file');
 drop.onclick=()=>file.click();
@@ -608,6 +719,7 @@ function download(name,data){
 }
 document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',window.__csvMonths||'');
 document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
+document.getElementById('dlPaid').onclick=()=>download('ortstaxe-gastbetraege.csv',window.__csvPaid||'');
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
@@ -704,6 +816,11 @@ if(location.search.indexOf('selftest')>=0){
     t('Status','„'+s+'“ wird gezählt', buchung('05.08.2026','06.08.2026','100',s).bookings.length, 1));
   t('Status','unbekannter Status warnt',
     buchung('05.08.2026','06.08.2026','100','Reserviert').warn.some(w=>/unbekannter Status/.test(w)), true);
+  /* Werte aus einem echten deutschen Export — dürfen nicht warnen */
+  ['Aktueller Gast','Früherer Gast','Gast bewertet','Gast bewerten – läuft bald ab',
+   'Currently hosting','Past guest'].forEach(s=>
+    t('Status','„'+s+'“ warnt nicht',
+      buchung('05.08.2026','06.08.2026','100',s).warn.length, 0));
 
   /* Beträge */
   t('Beträge','negativer Betrag warnt',
@@ -721,6 +838,134 @@ if(location.search.indexOf('selftest')>=0){
   t('Hochrechnung','zusätzlich 14 % Gastgebühr → 1.140 €', round2(mitGeb(3.6,14).bookings[0].amt), 1140);
   t('Hochrechnung','Gastgebühr erhöht die Abgabe um 14 %',
     round2(mitGeb(3.6,14).bookings[0].tax), round2(round2(mitGeb(3.6,0).bookings[0].tax)*1.14));
+
+  /* Gegenprobe an einer echten Airbnb-Abrechnung: Aufenthalt 19.07.–26.07.2026,
+     7 Nächte. Die Abrechnung weist aus: Nächtigung 936,00 + Reinigung 39,00 =
+     975,00, davon 3 % Gastgebergebühr + 20 % USt = 35,10 → Auszahlung 939,90.
+     Gast-Servicegebühr 163,80 brutto = 136,50 netto = 14,0 % von 975,00.
+     Bemessungsgrundlage 1.111,50, Meldemonat 07/2026 zu 5 %.
+     Achtung beim Nachstellen: „Gebucht“ (30.04.2026) ist das Buchungsdatum,
+     nicht die Anreise — für die Ortstaxe zählt allein der Aufenthalt. */
+  const beleg=compute(parseCSV(HEAD+'\nT;;Gast;19.07.2026;26.07.2026;;939,90'),
+    Object.assign({},BASE,{fee:3.6,gastfee:14})).bookings[0];
+  t('Abrechnung','939,90 € Auszahlung → 975,00 € vor Gast-Servicegebühr',
+    round2(939.90/(1-0.036)), 975);
+  t('Abrechnung','163,80 € brutto Gast-Servicegebühr sind 14,0 % netto',
+    round2(163.80/1.2/975*100), 14);
+  t('Abrechnung','Bemessungsgrundlage 1.111,50 €', round2(beleg.amt), 1111.5);
+  t('Abrechnung','7 Nächte', beleg.nights, 7);
+  t('Abrechnung','liegt nach dem Stichtag, also 5 %', beleg.parts[0].reg, 'r50');
+  t('Abrechnung','ein einziger Meldemonat 07/2026', beleg.parts[0].month, '2026-07');
+  t('Abrechnung','Ortstaxe gesamt 52,93 €', round2(beleg.tax), 52.93);
+
+  /* Aufenthalt über drei Meldemonate — Anreise 28.07., Abreise 08.09.2026.
+     Die Nächteaufteilung hängt nicht von den Gebührensätzen ab, deshalb hier
+     geprüft: 4 Nächte Juli, 31 August, 7 September. */
+  const spanne=compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),
+    Object.assign({},BASE,{fee:3.6,gastfee:14})).bookings[0];
+  t('Abrechnung','42 Nächte über drei Monate', spanne.nights, 42);
+  t('Abrechnung','drei Meldemonate', spanne.parts.length, 3);
+  t('Abrechnung','Juli 2026 — 4 Nächte', spanne.parts[0].month+'/'+spanne.parts[0].nights, '2026-07/4');
+  t('Abrechnung','August 2026 — 31 Nächte', spanne.parts[1].month+'/'+spanne.parts[1].nights, '2026-08/31');
+  t('Abrechnung','September 2026 — 7 Nächte', spanne.parts[2].month+'/'+spanne.parts[2].nights, '2026-09/7');
+  /* Gemeldet und bezahlt wird je Meldemonat, also ist die Summe der gerundeten
+     Monatswerte der maßgebliche Betrag. Der ungerundete Gesamtwert der Buchung
+     kann davon einen Cent abweichen — hier 176,53 gegen 176,54. Beide Werte sind
+     festgehalten, damit eine Änderung der Rundung auffällt. */
+  t('Abrechnung','Summe der Meldemonate 176,53 €',
+    round2(spanne.parts.reduce((s,x)=>s+round2(x.tax),0)), 176.53);
+  t('Abrechnung','ungerundeter Gesamtwert 176,54 € — ein Cent Rundungsdifferenz',
+    round2(spanne.tax), 176.54);
+
+  /* Optionale Spalte „Vom Gast bezahlt“. Die Gast-Servicegebühr ist nicht
+     konstant und aus der Auszahlung nicht herleitbar — belegt aus der App:
+     Pia 163,80 auf 975,00 = 14,0 % netto, Charles 381,26 auf 3.252,00 = 9,8 %.
+     Genau deshalb muss der Betrag je Buchung mitgegeben werden können. */
+  const HEADP=HEAD+';Vom Gast bezahlt';
+  const OPTB=Object.assign({},BASE,{fee:3.6,gastfee:14});
+  const belegt=(a,e,ein,gez)=>compute(parseCSV(HEADP+'\nT;;Gast;'+a+';'+e+';;'+ein+';'+gez),OPTB);
+
+  const pia=belegt('19.07.2026','26.07.2026','939,90','1138,80').bookings[0];
+  t('Gast bezahlt','Pia — Grundlage 1.111,50 €', round2(pia.amt), 1111.5);
+  t('Gast bezahlt','Pia — Ortstaxe 52,93 €', round2(pia.tax), 52.93);
+
+  const cha=belegt('28.07.2026','08.09.2026','3134,93','3633,26');
+  t('Gast bezahlt','Charles — 3.134,93 € hochgerechnet sind 3.252,00 €',
+    round2(3134.93/(1-0.036)), 3252);
+  t('Gast bezahlt','Charles — Servicegebühr 381,26 € brutto ergibt 9,77 % netto',
+    round2(381.26/1.2/3252*100), 9.77);
+  t('Gast bezahlt','Charles — Grundlage 3.569,72 €', round2(cha.bookings[0].amt), 3569.72);
+  t('Gast bezahlt','Charles — Ortstaxe 169,99 €', round2(cha.bookings[0].tax), 169.99);
+  t('Gast bezahlt','belegte Buchung warnt nicht vor der Pauschale',
+    cha.warn.some(w=>/pauschal/.test(w)), false);
+
+  /* Ohne Spalte bleibt nur der Pauschalsatz — der bei Charles 6,55 € zu viel
+     ansetzt. Das muss sichtbar sein, sonst hält der Nutzer es für belegt. */
+  const ohne=compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),OPTB);
+  t('Gast bezahlt','ohne Spalte 3.707,28 € statt 3.569,72 €',
+    round2(ohne.bookings[0].amt), 3707.28);
+  t('Gast bezahlt','ohne Spalte 6,55 € zu viel',
+    round2(round2(ohne.bookings[0].tax)-round2(cha.bookings[0].tax)), 6.55);
+  t('Gast bezahlt','ohne Spalte wird gewarnt', ohne.warn.some(w=>/pauschal/.test(w)), true);
+  t('Gast bezahlt','leere Zelle fällt auf den Prozentsatz zurück',
+    round2(belegt('28.07.2026','08.09.2026','3134,93','').bookings[0].amt), 3707.28);
+  t('Gast bezahlt','unplausibel kleiner Wert wird gemeldet',
+    belegt('28.07.2026','08.09.2026','3134,93','500,00').warn.some(w=>/liegt unter/.test(w)), true);
+  t('Gast bezahlt','ohne Gastgebühr keine Pauschal-Warnung',
+    compute(parseCSV(HEAD+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93'),
+      Object.assign({},BASE,{fee:3.6,gastfee:0})).warn.some(w=>/pauschal/.test(w)), false);
+
+  /* Der Einnahmen-Export darf nicht stumm durchlaufen — er hat Start- und
+     Enddatum und „Bruttoeinkünfte“ und käme sonst auf plausible falsche Zahlen. */
+  const EIN='Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,'
+    +'Buchungsdatum,Startdatum,Enddatum,Nächte,Gast,Inserat,Details,Referenzcode,'
+    +'Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
+    +'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr';
+  let abgewiesen='';
+  try{ compute(parseCSV(EIN+'\n,,Buchung,HM1,,07/19/2026,07/26/2026,7,G,,,,EUR,939.90,,35,10,,39.00,969.15,0.00,2026'),BASE); }
+  catch(e){ abgewiesen=e.message; }
+  t('CSV','Einnahmen-Export wird abgewiesen', /Einnahmen-Export/.test(abgewiesen), true);
+  t('CSV','Reservierungs-Export läuft weiter durch',
+    compute(parseCSV(HEAD+'\nT;;Gast;19.07.2026;26.07.2026;;939,90'),BASE).bookings.length, 1);
+
+  /* Kopfzeile und Formatierung wörtlich aus einem echten Reservierungs-Export:
+     Komma getrennt, alle Felder in Quotes, Datum ohne führende Null, Betrag mit
+     Eurozeichen und geschützten Leerzeichen (U+00A0) als Tausendertrenner. */
+  const XHEAD='"Bestätigungs-Code","Status","Name des Gastes","Kontakt",'
+    +'"Anzahl der Erwachsenen","Anzahl der Kinder","Anzahl der Kleinkinder",'
+    +'"Startdatum","Enddatum","Anzahl der Nächte","Gebucht","Inserat","Einkünfte"';
+  const xr=(code,st,von,bis,n,betrag)=>'"'+code+'","'+st+'","Gast","","2","0","0","'
+    +von+'","'+bis+'","'+n+'","2026-06-04","Roof top studio","'+betrag+'"';
+  const echt=compute(parseCSV(XHEAD+'\n'
+    +xr('HMJWXDTWBD','Aktueller Gast','28.7.2026','8.9.2026','42','€ 3 134,93')+'\n'
+    +xr('HMBC9HMQQA','Gast bewerten – läuft bald ab','19.7.2026','26.7.2026','7','€ 939,90')),
+    Object.assign({},BASE,{fee:3.6,gastfee:14}));
+  t('Echter Export','„€ 3 134,93“ mit geschützten Leerzeichen',
+    round2(echt.bookings[0].amt), 3707.28);
+  t('Echter Export','Datum „28.7.2026“ ohne führende Null', echt.bookings[0].nights, 42);
+  t('Echter Export','Aufenthalt über drei Meldemonate', echt.bookings[0].parts.length, 3);
+  t('Echter Export','zweite Buchung 7 Nächte im Juli', echt.bookings[1].parts[0].month, '2026-07');
+  t('Echter Export','keine Datums- oder Statuswarnung',
+    echt.warn.filter(w=>/Datum|Status/.test(w)).length, 0);
+
+  /* Eingabe in der Buchungstabelle (opt.paid). Rangfolge: Eingabe vor
+     CSV-Spalte vor Prozentsatz; eine geleerte Eingabe ist bewusst 0. */
+  const mitEingabe=(gez,ov)=>compute(parseCSV(HEADP+'\nT;;Gast;28.07.2026;08.09.2026;;3134,93;'+gez),
+    Object.assign({},OPTB,{paid:ov})).bookings[0];
+  t('Eingabe','Eingabe schlägt die CSV-Spalte',
+    round2(mitEingabe('1000,00',{T:3633.26}).amt), 3569.72);
+  t('Eingabe','geleerte Eingabe fällt auf den Prozentsatz',
+    round2(mitEingabe('3633,26',{T:0}).amt), 3707.28);
+  t('Eingabe','ohne Eingabe bleibt die CSV-Spalte',
+    round2(mitEingabe('3633,26',{}).amt), 3569.72);
+  t('Eingabe','ohne beides greift der Prozentsatz',
+    round2(mitEingabe('',{}).amt), 3707.28);
+  t('Eingabe','netPay bleibt die rohe Auszahlung',
+    round2(mitEingabe('3633,26',{}).netPay), 3134.93);
+  t('Eingabe','paid ist der tatsächlich verwendete Gastbetrag',
+    round2(mitEingabe('',{T:3633.26}).paid), 3633.26);
+  t('Eingabe','Eingabe zählt auch für den Meldemonat',
+    round2(mitEingabe('',{T:3633.26}).parts[1].tax), 125.47);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
