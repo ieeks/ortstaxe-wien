@@ -111,7 +111,7 @@ details p,details li{color:var(--ink-2)}
   #rows-wrap{overflow:visible}
   td,th{padding:5px 6px}
   .note,.legend,.hint{color:#333}
-  body.print-months #rows-wrap,body.print-months #rows-h,body.print-months #warnings,
+  body.print-months #rows-wrap,body.print-months #rows-h,
   body.print-months #quota,body.print-months #quota-h{display:none!important}
 }
 </style>
@@ -164,9 +164,23 @@ details p,details li{color:var(--ink-2)}
     </select>
     <span class="mono dim" style="font-size:11px" id="feeEff"></span>
   </div>
-  <div class="opt" style="flex:1;min-width:240px">
-    <div class="hint">Die CSV-Spalte „Einkünfte“ ist die Auszahlung nach Abzug der Servicegebühr. Bemessungsgrundlage ist das Entgelt des Gastes, deshalb wird hochgerechnet. Ohne hinterlegte UID verrechnet Airbnb 20 % USt auf die Gebühr, mit UID greift Reverse Charge und der Abzug ist entsprechend kleiner. Bei Direktbuchungen 0 eintragen.</div>
+  <div class="opt">
+    <label for="gastfee">Gast-Servicegebühr</label>
+    <input type="number" id="gastfee" value="14.0" min="0" max="30" step="0.1"> <span class="mono dim" style="font-size:11px">% zusätzlich vom Gast</span>
   </div>
+  <div class="opt" style="flex:1;min-width:240px">
+    <div class="hint">Die CSV-Spalte „Einkünfte“ ist die Auszahlung nach Abzug der Servicegebühr. Bemessungsgrundlage ist das Entgelt des Gastes, deshalb wird hochgerechnet. Ohne hinterlegte UID verrechnet Airbnb 20 % USt auf die Gebühr, mit UID greift Reverse Charge und der Abzug ist entsprechend kleiner. Bei Direktbuchungen beide Felder auf 0.</div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:10px">
+  <strong>Gast-Servicegebühr prüfen.</strong> Airbnb verrechnet dem Gast zusätzlich zu deinem Preis
+  eine eigene Servicegebühr — üblicherweise rund 14 %, je nach Buchung auch mehr oder weniger.
+  Nach der MA-6-FAQ (Frage 16) gehört sie in die Bemessungsgrundlage: Service- und Plattformgebühren,
+  die dem Gast in Rechnung gestellt werden, sind ein Entgeltbestandteil des Beherbergungsentgelts
+  im Sinne des § 12 WTFG. <strong>In der Reservierungs-CSV steht dieser Betrag nicht</strong> —
+  der Prozentsatz muss aus deiner Airbnb-Abrechnung kommen. Nutzt du das Modell, bei dem du als
+  Gastgeber die gesamte Gebühr trägst, gibt es keine Gast-Servicegebühr: dann hier 0 eintragen.
 </div>
 
 <div id="error" class="err hide"></div>
@@ -192,7 +206,7 @@ details p,details li{color:var(--ink-2)}
 
   <h2>Überweisungen an MA 6</h2>
   <div class="card"><table id="pays"></table></div>
-  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats.</div>
+  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats (§ 13 Abs. 1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für die im Vorjahr entstandene Abgabenschuld — die deckt dieses Tool noch nicht ab.</div>
 
   <h2 id="rows-h">Buchungen</h2>
   <div class="card" id="rows-wrap" style="overflow-x:auto"><table id="rows"></table></div>
@@ -216,9 +230,11 @@ details p,details li{color:var(--ink-2)}
     <li>ohne USt: 2,7691 % bis 30.06.2026 · 4,7619 % ab 01.07.2026 · 7,4074 % ab 01.07.2027</li>
     <li>bei 10 % USt: 2,5237 % bis 30.06.2026 · 4,3478 % ab 01.07.2026 · 6,7797 % ab 01.07.2027</li>
   </ul>
-  <p><strong>Bemessungsgrundlage:</strong> § 12 WTFG nennt als Abzüge nur die Umsatzsteuer und das Frühstück im ortsüblichen Ausmaß (bis 30.06.2026 zusätzlich den 11 %-Pauschalabzug). Eine Reinigungsgebühr ist nicht abzugsfähig — das BFG hat am 23.04.2024 zu RV/7400107/2023 entschieden, dass die Endreinigung als Nebenleistung zum Aufenthalt gehört (Amtsrevision anhängig). Ebenso wenig abzugsfähig ist die einbehaltene Airbnb-Servicegebühr, weil es auf das ankommt, was der Gast aufwendet, nicht auf die Auszahlung. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf die Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Auf die Bemessungsgrundlage der Ortstaxe hat das keinen Einfluss — nur darauf, wie weit von der Auszahlung auf das Entgelt hochgerechnet werden muss.</p>
+  <p><strong>Bemessungsgrundlage:</strong> § 12 Abs. 1 WTFG: „Bemessungsgrundlage ist das Entgelt für den Aufenthalt im Sinne des § 11.“ Nicht dazu gehören nach Abs. 2 nur die Umsatzsteuer und das Entgelt für das Frühstück im ortsüblichen Ausmaß. Bis 30.06.2026 kam der 11 %-Pauschalabzug dazu, der mit der ersten Erhöhungsstufe entfallen ist — die Schlüsselzahl 2,7691 % der MA 6 rechnet ihn noch ein.</p>
+  <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
+  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. In der CSV steht dieser Betrag nicht, er muss als Prozentsatz eingegeben werden.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
-  <p>Stornierte Buchungen werden übersprungen. Aufenthalte über mehr als drei Monate ununterbrochen sind befreit und werden mit 0 ausgewiesen. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
+  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
 
 </div>
@@ -231,6 +247,19 @@ const EFF = {r32:0.032*0.89, r50:0.05, r80:0.08};
 function regimeOf(ts){ return ts < STICHTAG_5 ? 'r32' : (ts < STICHTAG_8 ? 'r50' : 'r80'); }
 function fmt(n){ return n.toLocaleString('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function pct(e){ return e===EFF.r32?'3,2 %':(e===EFF.r50?'5 %':'8 %'); }
+// Kaufmännisch auf Cent runden. Der Umweg über toFixed ist nötig, weil
+// 1.005*100 binär 100.49999999999999 ergibt und Math.round dann abschneidet.
+function round2(n){ return Math.round(Number((n*100).toFixed(6)))/100; }
+// Frist in Monaten nach § 902 ABGB: fehlt der Anfangstag im Zielmonat, endet sie
+// am Monatsletzten. setUTCMonth allein würde den 31.03. auf den 01.07. überrollen.
+function plusMonths(ts,n){
+  const d=new Date(ts), tag=d.getUTCDate();
+  d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()+n);
+  const letzter=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+  d.setUTCDate(Math.min(tag,letzter));
+  return d.getTime();
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
 /* --- CSV --- */
 function parseCSV(text){
@@ -307,9 +336,12 @@ function compute(csvRows, opt){
   if(ci.start<0||ci.end<0||ci.amount<0)
     throw new Error('Die Spalten Startdatum, Enddatum und Einkünfte wurden nicht gefunden. Gefundene Kopfzeile: '+head.join(' | '));
 
-  const gross = 1/(1 - (opt.fee/100));
+  // Von der Auszahlung auf das, was der Gast aufwendet: erst die einbehaltene
+  // Gastgebergebühr zurückrechnen, dann die Gast-Servicegebühr aufschlagen —
+  // beide sind nach MA-6-FAQ 16 Bestandteil des Beherbergungsentgelts.
+  const gross = (1/(1 - (opt.fee/100))) * (1 + (opt.gastfee/100));
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
-  const bookings=[], months={}, warn=[], seen={};
+  const bookings=[], months={}, warn=[], seen=Object.create(null);
 
   for(let r=1;r<csvRows.length;r++){
     const row=csvRows[r];
@@ -319,7 +351,14 @@ function compute(csvRows, opt){
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
     const amt=parseMoney(row[ci.amount])*gross;
 
-    if(/storn|cancel/i.test(status)){ warn.push(code+' ('+name+') übersprungen — Status „'+status.trim()+'“.'); continue; }
+    // Nur Bestätigtes ist eine Nächtigung. Anfragen, ausstehende und abgelaufene
+    // Buchungen haben nie stattgefunden und gehören nicht in die Meldung.
+    const st=status.trim();
+    if(/storn|cancel|abgelehnt|declin|abgelaufen|expired|anfrage|inquir|ausstehend|pending|zeitüberschreitung|timed ?out/i.test(st)){
+      warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.'); continue;
+    }
+    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past/i.test(st))
+      warn.push(code+' ('+name+') — unbekannter Status „'+st+'“, wird als bestätigt gerechnet.');
     if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
     const nights=Math.round((b-a)/86400000);
     if(nights<=0){ warn.push(code+' übersprungen — '+nights+' Nächte.'); continue; }
@@ -330,9 +369,12 @@ function compute(csvRows, opt){
     if(seen[code]) warn.push(code+' kommt mehrfach vor — bitte prüfen.');
     seen[code]=1;
     if(!amt) warn.push(code+' ('+name+') hat keinen Betrag — wird mit 0 gerechnet.');
+    else if(amt<0) warn.push(code+' ('+name+') hat einen negativen Betrag ('+fmt(amt)+' €) — Gutschrift oder Anpassung? Wird gegengerechnet.');
 
-    const limit=new Date(a); limit.setUTCMonth(limit.getUTCMonth()+3);
-    const exempt = b > limit.getTime();
+    // § 11 Abs. 3 WTFG: befreit ist, wer länger als drei Monate ununterbrochen
+    // Aufenthalt nimmt — und zwar als Person, also für den gesamten Aufenthalt.
+    const limit = plusMonths(a,3);
+    const exempt = b > limit;
 
     const per=amt/nights, segs=[], byKey={};
     let taxTotal=0, baseTotal=0;
@@ -422,20 +464,24 @@ function render(res, opt){
   document.getElementById('printMeta').textContent =
     'Erstellt '+new Date().toLocaleDateString('de-AT')+' · Basis: '
     +(opt.basis==='ust10'?'Beträge inkl. 10 % USt und Ortstaxe':'Beträge ohne USt, inkl. Ortstaxe')
-    +(opt.fee?' · Servicegebühr '+opt.fee.toFixed(2).replace('.',',')+' % hochgerechnet (UID '+(opt.uid==='ja'?'ja':'nein')+')':'')
+    +(opt.fee?' · Gastgebergebühr '+opt.fee.toFixed(2).replace('.',',')+' % hochgerechnet (UID '+(opt.uid==='ja'?'ja':'nein')+')':'')
+    +(opt.gastfee?' · Gast-Servicegebühr '+opt.gastfee.toFixed(2).replace('.',',')+' % aufgeschlagen':' · ohne Gast-Servicegebühr')
     +' · '+res.bookings.length+' Buchungen';
   const mt=document.getElementById('months');
   let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th><th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th></tr>';
   let sb=0,st=0,sn=0;
   res.months.forEach(m=>{
-    sb+=m.base; st+=m.tax; sn+=m.nights;
+    // Summiert wird über die gerundeten Monatswerte — überwiesen wird pro Monat
+    // dieser Betrag, die Summe muss die Spalte darüber wiedergeben.
+    const tr=round2(m.tax);
+    sb+=m.base; st+=tr; sn+=m.nights;
     h+='<tr><td class="mono">'+monthLabel(m.month)+'</td>'
       +'<td><span class="rate '+m.reg+'">'+pct(EFF[m.reg])+'</span></td>'
       +'<td class="num">'+m.nights+'</td>'
       +'<td class="num">'+fmt(m.base)+'</td>'
-      +'<td class="num"><strong>'+fmt(Math.round(m.tax*100)/100)+'</strong></td></tr>';
+      +'<td class="num"><strong>'+fmt(tr)+'</strong></td></tr>';
   });
-  h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sn+'</td><td class="num">'+fmt(sb)+'</td><td class="num">'+fmt(Math.round(st*100)/100)+'</td></tr>';
+  h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sn+'</td><td class="num">'+fmt(sb)+'</td><td class="num">'+fmt(round2(st))+'</td></tr>';
   mt.innerHTML=h;
 
   const pt=document.getElementById('pays');
@@ -448,10 +494,10 @@ function render(res, opt){
     const due=new Date(Date.UTC(+y,+mo,15)).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
     const vz=opt.konto+mo+y;
     p+='<tr><td class="mono">'+monthLabel(k)+'</td><td class="mono dim">'+due+'</td>'
-      +'<td class="num"><strong>'+fmt(Math.round(perMonth[k]*100)/100)+'</strong></td>'
-      +'<td><div class="vz"><code>'+vz+'</code><button class="copy" data-vz="'+vz+'">Kopieren</button></div></td></tr>';
+      +'<td class="num"><strong>'+fmt(round2(perMonth[k]))+'</strong></td>'
+      +'<td><div class="vz"><code>'+esc(vz)+'</code><button class="copy" data-vz="'+esc(vz)+'">Kopieren</button></div></td></tr>';
   });
-  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(Math.round(keys.reduce((s,k)=>s+perMonth[k],0)*100)/100)+'</td><td></td></tr>';
+  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(round2(keys.reduce((s,k)=>s+round2(perMonth[k]),0)))+'</td><td></td></tr>';
   pt.innerHTML=p;
   pt.querySelectorAll('.copy').forEach(btn=>{
     btn.onclick=()=>{
@@ -468,30 +514,30 @@ function render(res, opt){
     const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'UTC'});
     const parts=b.exempt
       ? '<span class="flag">über 3 Monate — befreit</span>'
-      : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(Math.round(p.tax*100)/100)+'</div>').join('');
-    g+='<tr><td class="mono" style="font-size:12px">'+b.code+'</td><td>'+b.name+'</td>'
+      : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(round2(p.tax))+'</div>').join('');
+    g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td>'+parts+'</td>'
-      +'<td class="num"><strong>'+fmt(Math.round(b.tax*100)/100)+'</strong></td></tr>';
+      +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
   });
   rt.innerHTML=g;
 
   const w=document.getElementById('warnings');
   w.innerHTML = res.warn.length
-    ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>'
+    ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'
     : '';
   document.getElementById('out').classList.remove('hide');
 
   window.__csvMonths='Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
-    res.months.map(m=>[monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),fmt(Math.round(m.tax*100)/100),opt.konto+m.month.split('-')[1]+m.month.split('-')[0]].join(';')).join('\n');
+    res.months.map(m=>[monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),fmt(round2(m.tax)),opt.konto+m.month.split('-')[1]+m.month.split('-')[0]].join(';')).join('\n');
   window.__csvRows='Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
     res.bookings.flatMap(b=>{
       const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
       if(b.exempt) return [[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'].join(';')];
-      return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(Math.round(p.tax*100)/100)].join(';'));
+      return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))].join(';'));
     }).join('\n');
 }
 
@@ -505,6 +551,7 @@ function run(){
     const opt={basis:document.getElementById('basis').value,
                fee:((parseFloat(document.getElementById('fee').value)||0)
                     * (document.getElementById('uid').value==='ja' ? 1 : 1.2)),
+               gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
                uid:document.getElementById('uid').value,
                zaehl:document.getElementById('zaehl').value,
                konto:(document.getElementById('konto').value||'').replace(/\s/g,'')};
@@ -544,6 +591,7 @@ document.getElementById('konto').oninput=run;
   inp.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();lock();} if(e.key==='Escape'){inp.value=saved;lock();} };
 })();
 document.getElementById('fee').oninput=run;
+document.getElementById('gastfee').oninput=run;
 
 function toPDF(onlyMonths){
   document.body.classList.toggle('print-months',!!onlyMonths);
@@ -559,6 +607,168 @@ function download(name,data){
 }
 document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',window.__csvMonths||'');
 document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
+
+/* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
+   Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
+   Funktionen, die auch die Meldung rechnen. Fälle mit „offen“ dokumentieren
+   einen bekannten Bug — sie schlagen absichtlich fehl und schalten auf
+   „behoben“ um, sobald der Fix drin ist.                                    */
+if(location.search.indexOf('selftest')>=0){
+  const HEAD='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte';
+  const BASE={basis:'net',fee:0,gastfee:0,zaehl:'nights',konto:'601005590'};
+  const csv=(...r)=>compute(parseCSV(HEAD+'\n'+r.join('\n')),BASE);
+  const buchung=(von,bis,betrag,status)=>csv('T;'+(status||'')+';Gast;'+von+';'+bis+';;'+(betrag===undefined?'100':betrag));
+  const schluessel=(e,u)=>+(e/(u+e)).toFixed(6);
+
+  const R=[]; let gut=0, schlecht=0, offen=0;
+  function t(gruppe,name,ist,soll,bug){
+    const p=Object.is(ist,soll);
+    if(bug){ offen++; R.push([p?'behoben':'offen',gruppe,name,
+      p ? bug+' ist behoben — Erwartung im Testfall nachziehen'
+        : 'erwartet '+soll+', ist '+ist+' — bekannt als '+bug]); }
+    else if(p){ gut++; R.push(['ok',gruppe,name,'']); }
+    else { schlecht++; R.push(['fehler',gruppe,name,'erwartet '+soll+', ist '+ist]); }
+  }
+
+  /* Schlüsselzahlen der Stadt Wien — schützt die Konstanten aus CLAUDE.md */
+  t('Schlüsselzahlen','3,2 % ohne USt',  schluessel(EFF.r32,1),    0.027691);
+  t('Schlüsselzahlen','5 % ohne USt',    schluessel(EFF.r50,1),    0.047619);
+  t('Schlüsselzahlen','8 % ohne USt',    schluessel(EFF.r80,1),    0.074074);
+  t('Schlüsselzahlen','3,2 % bei 10 % USt', schluessel(EFF.r32,1.10), 0.025237);
+  t('Schlüsselzahlen','5 % bei 10 % USt',   schluessel(EFF.r50,1.10), 0.043478);
+  t('Schlüsselzahlen','8 % bei 10 % USt',   schluessel(EFF.r80,1.10), 0.067797);
+
+  /* Regressionsfall aus CLAUDE.md */
+  const reg=buchung('18.06.2026','19.07.2026','1644,80');
+  t('Regression','Gesamt 64,58 €',       round2(reg.bookings[0].tax), 64.58);
+  t('Regression','Juni 13 N → 19,10 €',  round2(reg.months[0].tax),   19.10);
+  t('Regression','Juli 18 N → 45,48 €',  round2(reg.months[1].tax),   45.48);
+  t('Regression','Juni hat 13 Nächte',   reg.months[0].nights,        13);
+  t('Regression','Juli hat 18 Nächte',   reg.months[1].nights,        18);
+
+  /* Stichtagsgrenzen — beide Jahre, beide Seiten */
+  t('Stichtage','Nacht 30.06.2026 → 3,2 %', buchung('30.06.2026','01.07.2026').bookings[0].segs[0],'r32');
+  t('Stichtage','Nacht 01.07.2026 → 5 %',   buchung('01.07.2026','02.07.2026').bookings[0].segs[0],'r50');
+  t('Stichtage','Nacht 30.06.2027 → 5 %',   buchung('30.06.2027','01.07.2027').bookings[0].segs[0],'r50');
+  t('Stichtage','Nacht 01.07.2027 → 8 %',   buchung('01.07.2027','02.07.2027').bookings[0].segs[0],'r80');
+  t('Stichtage','Aufenthalt über den Stichtag wird geteilt',
+    buchung('29.06.2026','02.07.2026','300').bookings[0].segs.join(','), 'r32,r32,r50');
+  // Amtliches Beispiel, MA-6-FAQ Frage 3: Aufenthalt 25.06.–03.07.2027 → bis
+  // 30.06. gilt 5 % „inkl. der Nacht vom 30. Juni 2027 auf den 1. Juli 2027“,
+  // ab 01.07. dann 8 %.
+  const faq=buchung('25.06.2027','03.07.2027','800');
+  t('Stichtage','FAQ-Beispiel: 6 Nächte im Juni', faq.months[0].nights, 6);
+  t('Stichtage','FAQ-Beispiel: Juni zu 5 %',      faq.months[0].reg, 'r50');
+  t('Stichtage','FAQ-Beispiel: 2 Nächte im Juli', faq.months[1].nights, 2);
+  t('Stichtage','FAQ-Beispiel: Juli zu 8 %',      faq.months[1].reg, 'r80');
+
+  /* Meldemonat */
+  const mw=buchung('29.06.2026','02.07.2026','300');
+  t('Meldemonat','zwei Meldeperioden', mw.bookings[0].parts.length, 2);
+  t('Meldemonat','Juni 2026',          mw.months[0].month, '2026-06');
+  t('Meldemonat','Juli 2026',          mw.months[1].month, '2026-07');
+
+  /* Drei-Monats-Befreiung — B1 ist noch offen */
+  t('Befreiung','90 Nächte nicht befreit', buchung('01.01.2026','01.04.2026').bookings[0].exempt, false);
+  t('Befreiung','91 Nächte befreit',       buchung('01.01.2026','02.04.2026').bookings[0].exempt, true);
+  // § 11 Abs. 3 WTFG befreit die Person, nicht den Zeitraum: „Personen, die länger
+  // als drei Monate ununterbrochen Aufenthalt nehmen, sind von der Entrichtung der
+  // Ortstaxe befreit." Ohne Einschränkung — also auch die ersten drei Monate.
+  t('Befreiung','befreiter Aufenthalt ist zur Gänze frei',
+    round2(buchung('01.01.2026','05.04.2026','10000').bookings[0].tax), 0);
+  t('Befreiung','befreiter Aufenthalt erzeugt keinen Meldemonat',
+    buchung('01.01.2026','05.04.2026','10000').months.length, 0);
+  // § 902 ABGB: drei Monate ab 31.03. enden mit Ablauf des 30.06., ab 30.11. mit
+  // Ablauf des 28.02. — der Zielmonat hat den Anfangstag nicht.
+  t('Befreiung','Monatsende 31.03. → 01.07. befreit', buchung('31.03.2026','01.07.2026').bookings[0].exempt, true);
+  t('Befreiung','Monatsende 31.03. → 30.06. nicht',   buchung('31.03.2026','30.06.2026').bookings[0].exempt, false);
+  t('Befreiung','Monatsende 30.11. → 01.03. befreit', buchung('30.11.2026','01.03.2027').bookings[0].exempt, true);
+  t('Befreiung','Monatsende 30.11. → 28.02. nicht',   buchung('30.11.2026','28.02.2027').bookings[0].exempt, false);
+  t('Befreiung','Schaltjahr 30.11.2027 → 29.02.2028 nicht', buchung('30.11.2027','29.02.2028').bookings[0].exempt, false);
+  t('Befreiung','Jahreswechsel 31.12. → 31.03. nicht', buchung('31.12.2026','31.03.2027').bookings[0].exempt, false);
+  t('Befreiung','Jahreswechsel 31.12. → 01.04. befreit', buchung('31.12.2026','01.04.2027').bookings[0].exempt, true);
+
+  /* Rundung */
+  t('Rundung','round2(1.005) = 1,01', round2(1.005), 1.01);
+  t('Rundung','round2(8.165) = 8,17', round2(8.165), 8.17);
+  t('Rundung','round2(1.015) = 1,02', round2(1.015), 1.02);
+  const drei=csv('A;;G;05.08.2026;06.08.2026;;100','B;;G;05.09.2026;06.09.2026;;100','C;;G;05.10.2026;06.10.2026;;100');
+  t('Rundung','Summe folgt den Monatszeilen',
+    round2(drei.months.reduce((s,m)=>s+round2(m.tax),0)), 14.28);
+
+  /* Status-Filter */
+  ['Storniert','Canceled','Anfrage','Ausstehend','Pending','Abgelaufen'].forEach(s=>
+    t('Status','„'+s+'“ wird übersprungen', buchung('05.08.2026','06.08.2026','100',s).bookings.length, 0));
+  ['Bestätigt','Confirmed'].forEach(s=>
+    t('Status','„'+s+'“ wird gezählt', buchung('05.08.2026','06.08.2026','100',s).bookings.length, 1));
+  t('Status','unbekannter Status warnt',
+    buchung('05.08.2026','06.08.2026','100','Reserviert').warn.some(w=>/unbekannter Status/.test(w)), true);
+
+  /* Beträge */
+  t('Beträge','negativer Betrag warnt',
+    buchung('05.08.2026','06.08.2026','-200,00').warn.some(w=>/negativen Betrag/.test(w)), true);
+  t('Beträge','fehlender Betrag warnt',
+    buchung('05.08.2026','06.08.2026','').warn.some(w=>/keinen Betrag/.test(w)), true);
+  ['1.644,80','1,644.80','1644.80','1644,80','€ 1.644,80'].forEach(s=>
+    t('Beträge','parseMoney „'+s+'“', parseMoney(s), 1644.8));
+
+  /* Hochrechnung auf das Gastentgelt — MA-6-FAQ Frage 16 */
+  const mitGeb=(fee,gastfee)=>compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;964,00'),
+    Object.assign({},BASE,{fee:fee,gastfee:gastfee}));
+  t('Hochrechnung','ohne Gebühren bleibt der Betrag', round2(mitGeb(0,0).bookings[0].amt), 964);
+  t('Hochrechnung','3,6 % Gastgebergebühr → 1.000 €', round2(mitGeb(3.6,0).bookings[0].amt), 1000);
+  t('Hochrechnung','zusätzlich 14 % Gastgebühr → 1.140 €', round2(mitGeb(3.6,14).bookings[0].amt), 1140);
+  t('Hochrechnung','Gastgebühr erhöht die Abgabe um 14 %',
+    round2(mitGeb(3.6,14).bookings[0].tax), round2(round2(mitGeb(3.6,0).bookings[0].tax)*1.14));
+
+  /* CSV */
+  t('CSV','Semikolon + Quotes + Komma im Namen',
+    compute(parseCSV(HEAD+'\nT;;"Müller, Anna";05.06.2026;07.06.2026;;"1.200,50"'),BASE).bookings[0].nights, 2);
+  t('CSV','Komma-Trenner, englische Kopfzeile',
+    compute(parseCSV('Confirmation code,Status,Guest name,Start date,End date,# of nights,Earnings\nT,,Anna,06/05/2026,06/07/2026,2,"1,200.50"'),BASE).bookings[0].amt, 1200.5);
+  t('CSV','BOM wird entfernt',
+    compute(parseCSV('﻿'+HEAD+'\nT;;G;05.08.2026;06.08.2026;;100'),BASE).bookings.length, 1);
+  t('CSV','unlesbares Datum warnt',
+    csv('T;;G;;06.08.2026;;100').warn.some(w=>/nicht lesbar/.test(w)), true);
+  t('CSV','0 Nächte werden übersprungen',
+    buchung('05.08.2026','05.08.2026').bookings.length, 0);
+
+  /* Robustheit */
+  t('Robustheit','esc() neutralisiert Markup', esc('<img src=x onerror=y>'), '&lt;img src=x onerror=y&gt;');
+  t('Robustheit','esc() behandelt Anführungszeichen', esc('a"b&c'), 'a&quot;b&amp;c');
+  t('Robustheit','Code „constructor“ löst keine Dublettenwarnung aus',
+    csv('constructor;;G;05.08.2026;06.08.2026;;100').warn.length, 0);
+  t('Robustheit','echte Dublette warnt',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.09.2026;06.09.2026;;100')
+      .warn.some(w=>/mehrfach/.test(w)), true);
+
+  /* Ausgabe */
+  const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
+  const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};
+  let letzte='', html='';
+  R.forEach(([art,gruppe,name,anm])=>{
+    if(gruppe!==letzte){ html+='<h2>'+esc(gruppe)+'</h2>'; letzte=gruppe; }
+    html+='<div class="tz"><b style="color:'+farbe[art]+'">'+zeichen[art]+'</b>'
+       +'<span>'+esc(name)+'</span>'
+       +(anm?'<em>'+esc(anm)+'</em>':'')+'</div>';
+  });
+  document.body.className='';
+  document.body.innerHTML=
+     '<div class="wrap"><header><h1>Selbsttest</h1>'
+    +'<div class="sub">'+gut+' bestanden · '+schlecht+' fehlgeschlagen · '+offen+' bekannt offen</div></header>'
+    +'<div class="card" style="padding:18px 22px">'+html+'</div>'
+    +'<div class="note">„!“ markiert einen dokumentierten, noch nicht behobenen Bug — '
+    +'diese Fälle sind erwartet rot. „△“ heißt: der Bug ist behoben, die Erwartung im '
+    +'Testfall gehört nachgezogen.</div></div>';
+  const s=document.createElement('style');
+  s.textContent='.tz{display:grid;grid-template-columns:16px 1fr;gap:4px 10px;'
+    +'padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:14px}'
+    +'.tz b{font-family:var(--mono)}.tz em{grid-column:2;font-style:normal;'
+    +'font-family:var(--mono);font-size:12px;color:var(--ink-2)}'
+    +'.tz:last-child{border-bottom:none}';
+  document.head.appendChild(s);
+  document.title='Selbsttest — '+(schlecht?schlecht+' fehlgeschlagen':'alles grün');
+}
 </script>
 </body>
 </html>
