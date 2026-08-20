@@ -17,25 +17,35 @@ Die CSV wird ausschließlich im Browser verarbeitet und nirgendwo hochgeladen.
    - **Betragsbasis** — ob die Spalte „Einkünfte" ohne USt oder inkl. 10 % USt geführt ist
    - **90-Tage-Zählung** — Nächte oder belegte Tage inkl. Abreisetag
    - **Abgabenkonto MA 6** — geht in den Verwendungszweck ein
-   - **Airbnb-Grundgebühr** und **UID hinterlegt** — steuern die Hochrechnung von der
-     Auszahlung auf das Gastentgelt
+   - **Airbnb-Grundgebühr** und **UID hinterlegt** — rechnen von der Auszahlung auf
+     den von dir verrechneten Betrag hoch
+   - **Gast-Servicegebühr** — der Aufschlag, den Airbnb dem Gast zusätzlich verrechnet.
+     Steht nicht in der CSV, muss aus der Airbnb-Abrechnung kommen. Bei Direktbuchungen
+     und beim Modell „Gastgeber trägt die ganze Gebühr“ auf 0 setzen
 4. Ergebnis als PDF drucken oder als CSV herunterladen
 
 Erkannt werden deutsche und englische Spaltenüberschriften. Stornierte, abgelehnte,
-abgelaufene und noch nicht bestätigte Buchungen werden übersprungen, Aufenthalte über
-drei Monate als befreit mit 0 ausgewiesen.
+abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein
+entgeltlicher Aufenthalt statt, fällt keine Ortstaxe an (FAQ 9).
+
+Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG
+befreit, und zwar **zur Gänze**: befreit ist die Person, nicht bloß der Zeitraum
+jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der
+Anreisetag im Zielmonat fehlt — drei Monate ab 31.03. enden mit Ablauf des 30.06. Wer
+die Befreiung geltend macht, hat die maßgeblichen Umstände nachzuweisen.
 
 ## Selbsttest
 
-`index.html?selftest` rechnet rund fünfzig Prüfungen gegen dieselben Funktionen, die
-auch die Meldung erstellen — Schlüsselzahlen, beide Stichtagsgrenzen, Meldemonat,
-Drei-Monats-Befreiung, Rundung, Statusfilter und CSV-Parsing. Kein Build-Schritt,
-keine zweite Datei.
+`index.html?selftest` rechnet 67 Prüfungen gegen dieselben Funktionen, die auch die
+Meldung erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem
+amtlichen Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der
+Monatsenden nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter und CSV-Parsing.
+Kein Build-Schritt, keine zweite Datei.
 
-Fälle mit „!“ dokumentieren einen bekannten, noch nicht behobenen Bug: sie sind
-erwartet rot und schalten auf „△“ um, sobald der Fix greift — dann gehört die
-Erwartung im Testfall nachgezogen. Vor jeder Änderung an der Rechnung einmal
-aufrufen; „0 fehlgeschlagen“ ist die Bedingung zum Commit.
+Vor jeder Änderung an der Rechnung einmal aufrufen; **„0 fehlgeschlagen“ ist die
+Bedingung zum Commit.** Ein Testfall kann als bekannter, noch nicht behobener Bug
+markiert werden — der zeigt „!“, gilt nicht als Fehlschlag und springt auf „△“, sobald
+der Fix greift. Aktuell ist keiner markiert.
 
 ## Rechenlogik
 
@@ -54,19 +64,34 @@ enthaltener Ortstaxe**:
 | ab 01.07.2027 | 8 % | 7,4074 % | 6,7797 % |
 
 Bemessungsgrundlage ist das Beherbergungsentgelt ohne USt und ohne Ortstaxe — das
-ist der Wert, der ins Formular gehört. Nach § 12 WTFG sind nur die Umsatzsteuer und
-das Frühstück im ortsüblichen Ausmaß abzugsfähig (bis 30.06.2026 zusätzlich der
-11 %-Pauschalabzug). Die Reinigungsgebühr ist **nicht** abzugsfähig — BFG vom
-23.04.2024 zu RV/7400107/2023, Amtsrevision anhängig. Die von Airbnb einbehaltene
-Servicegebühr ebenfalls nicht, weil es auf den Aufwand des Gastes ankommt und nicht
-auf die Auszahlung; deshalb wird von der Auszahlung hochgerechnet.
+ist der Wert, der ins Formular gehört. § 12 Abs. 1 WTFG: „Bemessungsgrundlage ist das
+Entgelt für den Aufenthalt im Sinne des § 11.“ Nicht dazu gehören nach Abs. 2 nur die
+Umsatzsteuer und das Frühstück im ortsüblichen Ausmaß; bis 30.06.2026 kam der
+11 %-Pauschalabzug dazu, der mit der ersten Stufe entfallen ist.
 
-Meldung und Zahlung sind jeweils am 15. des Folgemonats fällig, Verwendungszweck ist
-Abgabenkontonummer + MMJJJJ des Aufenthaltsmonats.
+Sonst ist nichts abzugsfähig. Hinein gehören insbesondere:
+
+- die **Reinigungsgebühr** — MA-6-FAQ Frage 15, ebenso BFG vom 23.04.2024 zu
+  RV/7400107/2023
+- **Zuschläge** wie Late Check-out, Early Check-in, Upgrade oder Haustier — FAQ 13
+- die einbehaltene **Gastgeber-Servicegebühr**, weil es auf den Aufwand des Gastes
+  ankommt und nicht auf die Auszahlung — deshalb wird hochgerechnet
+- die **Gast-Servicegebühr** der Plattform — FAQ 16: Service- und Plattformgebühren,
+  die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des
+  Beherbergungsentgelts im Sinne des § 12 WTFG“
+
+Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der
+Regel nicht dazu.
+
+Meldung und Zahlung sind jeweils am 15. des Folgemonats fällig (§ 13 Abs. 1 WTFG),
+Verwendungszweck ist Abgabenkontonummer + MMJJJJ des Aufenthaltsmonats. Dazu kommt bis
+zum 15. Februar die elektronische Abgabenerklärung für das Vorjahr — die deckt das Tool
+noch nicht ab.
 
 ### Geprüftes Beispiel
 
-Buchung 18.06.2026 – 19.07.2026, 1.644,80 € Gastentgelt, ohne USt-Basis:
+Buchung 18.06.2026 – 19.07.2026, 1.644,80 € Gastentgelt, ohne USt-Basis, beide
+Gebührenfelder auf 0 (der Betrag ist bereits das, was der Gast aufwendet):
 
 | Meldemonat | Nächte | Ortstaxe |
 |---|---|---|

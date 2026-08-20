@@ -9,15 +9,25 @@ das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
-- Selbsttest unter `index.html?selftest` — rund fünfzig Prüfungen gegen die
-  Rechenfunktionen, darunter beide Stichtagsgrenzen, die Schlüsselzahlen aus
-  `CLAUDE.md` und der dort vorgeschriebene Regressionsfall. Bekannte, noch
-  offene Bugs sind als solche markiert statt zu fehlen
+- Eingabefeld **Gast-Servicegebühr**: Die Gebühr, die Airbnb dem Gast zusätzlich
+  verrechnet, gehört nach der MA-6-FAQ (Frage 16) in die Bemessungsgrundlage —
+  Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind
+  ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG. In der
+  Reservierungs-CSV steht der Betrag nicht, deshalb ein Prozentfeld mit Hinweis.
+  Bisher fehlte dieser Anteil in der Meldung vollständig
+- Selbsttest unter `index.html?selftest` — 67 Prüfungen gegen die Rechenfunktionen,
+  darunter beide Stichtagsgrenzen samt dem amtlichen Rechenbeispiel aus FAQ 3, die
+  Schlüsselzahlen und der Regressionsfall aus `CLAUDE.md`, die Monatsenden der
+  Drei-Monats-Frist und die Hochrechnung. Bekannte, noch offene Bugs lassen sich
+  markieren statt zu fehlen
 - Warnung bei negativen Beträgen, die bisher stillschweigend gegengerechnet
   wurden, und bei unbekannten Buchungsstatus
 
 ### Geändert
 
+- Die Erklärtexte zitieren jetzt den Gesetzeswortlaut und die MA-6-FAQ statt
+  Sekundärquellen: § 12 zur Bemessungsgrundlage, § 11 Abs. 3 zur Befreiung samt
+  Nachweispflicht, § 13 Abs. 1 zu Fälligkeit und Jahreserklärung zum 15. Februar
 - Der Statusfilter überspringt jetzt auch abgelehnte, abgelaufene und noch
   nicht bestätigte Buchungen — bisher fielen nur Stornos heraus, Anfragen
   und ausstehende Buchungen wurden als Nächtigung gemeldet
@@ -27,6 +37,11 @@ das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- Die Drei-Monats-Frist der Befreiung nach § 11 Abs. 3 WTFG lief bei Anreisen am
+  Monatsende über: `setUTCMonth` rollte den 31.03. auf den 01.07. statt nach
+  § 902 ABGB auf den 30.06. zu klemmen. Ein Aufenthalt vom 31.03. bis 01.07. wurde
+  dadurch voll besteuert statt befreit — bei der Alles-oder-nichts-Befreiung ein
+  Unterschied über die gesamte Buchung
 - Beträge auf halbem Cent wurden gleitkommabedingt abgeschnitten statt
   kaufmännisch gerundet (1,005 € ergab 1,00 € statt 1,01 €)
 - Gastnamen und Bestätigungs-Codes aus der CSV werden vor der Ausgabe

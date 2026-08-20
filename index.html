@@ -164,9 +164,23 @@ details p,details li{color:var(--ink-2)}
     </select>
     <span class="mono dim" style="font-size:11px" id="feeEff"></span>
   </div>
-  <div class="opt" style="flex:1;min-width:240px">
-    <div class="hint">Die CSV-Spalte „Einkünfte“ ist die Auszahlung nach Abzug der Servicegebühr. Bemessungsgrundlage ist das Entgelt des Gastes, deshalb wird hochgerechnet. Ohne hinterlegte UID verrechnet Airbnb 20 % USt auf die Gebühr, mit UID greift Reverse Charge und der Abzug ist entsprechend kleiner. Bei Direktbuchungen 0 eintragen.</div>
+  <div class="opt">
+    <label for="gastfee">Gast-Servicegebühr</label>
+    <input type="number" id="gastfee" value="14.0" min="0" max="30" step="0.1"> <span class="mono dim" style="font-size:11px">% zusätzlich vom Gast</span>
   </div>
+  <div class="opt" style="flex:1;min-width:240px">
+    <div class="hint">Die CSV-Spalte „Einkünfte“ ist die Auszahlung nach Abzug der Servicegebühr. Bemessungsgrundlage ist das Entgelt des Gastes, deshalb wird hochgerechnet. Ohne hinterlegte UID verrechnet Airbnb 20 % USt auf die Gebühr, mit UID greift Reverse Charge und der Abzug ist entsprechend kleiner. Bei Direktbuchungen beide Felder auf 0.</div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:10px">
+  <strong>Gast-Servicegebühr prüfen.</strong> Airbnb verrechnet dem Gast zusätzlich zu deinem Preis
+  eine eigene Servicegebühr — üblicherweise rund 14 %, je nach Buchung auch mehr oder weniger.
+  Nach der MA-6-FAQ (Frage 16) gehört sie in die Bemessungsgrundlage: Service- und Plattformgebühren,
+  die dem Gast in Rechnung gestellt werden, sind ein Entgeltbestandteil des Beherbergungsentgelts
+  im Sinne des § 12 WTFG. <strong>In der Reservierungs-CSV steht dieser Betrag nicht</strong> —
+  der Prozentsatz muss aus deiner Airbnb-Abrechnung kommen. Nutzt du das Modell, bei dem du als
+  Gastgeber die gesamte Gebühr trägst, gibt es keine Gast-Servicegebühr: dann hier 0 eintragen.
 </div>
 
 <div id="error" class="err hide"></div>
@@ -192,7 +206,7 @@ details p,details li{color:var(--ink-2)}
 
   <h2>Überweisungen an MA 6</h2>
   <div class="card"><table id="pays"></table></div>
-  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats.</div>
+  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats (§ 13 Abs. 1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für die im Vorjahr entstandene Abgabenschuld — die deckt dieses Tool noch nicht ab.</div>
 
   <h2 id="rows-h">Buchungen</h2>
   <div class="card" id="rows-wrap" style="overflow-x:auto"><table id="rows"></table></div>
@@ -216,9 +230,11 @@ details p,details li{color:var(--ink-2)}
     <li>ohne USt: 2,7691 % bis 30.06.2026 · 4,7619 % ab 01.07.2026 · 7,4074 % ab 01.07.2027</li>
     <li>bei 10 % USt: 2,5237 % bis 30.06.2026 · 4,3478 % ab 01.07.2026 · 6,7797 % ab 01.07.2027</li>
   </ul>
-  <p><strong>Bemessungsgrundlage:</strong> § 12 WTFG nennt als Abzüge nur die Umsatzsteuer und das Frühstück im ortsüblichen Ausmaß (bis 30.06.2026 zusätzlich den 11 %-Pauschalabzug). Eine Reinigungsgebühr ist nicht abzugsfähig — das BFG hat am 23.04.2024 zu RV/7400107/2023 entschieden, dass die Endreinigung als Nebenleistung zum Aufenthalt gehört (Amtsrevision anhängig). Ebenso wenig abzugsfähig ist die einbehaltene Airbnb-Servicegebühr, weil es auf das ankommt, was der Gast aufwendet, nicht auf die Auszahlung. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf die Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Auf die Bemessungsgrundlage der Ortstaxe hat das keinen Einfluss — nur darauf, wie weit von der Auszahlung auf das Entgelt hochgerechnet werden muss.</p>
+  <p><strong>Bemessungsgrundlage:</strong> § 12 Abs. 1 WTFG: „Bemessungsgrundlage ist das Entgelt für den Aufenthalt im Sinne des § 11.“ Nicht dazu gehören nach Abs. 2 nur die Umsatzsteuer und das Entgelt für das Frühstück im ortsüblichen Ausmaß. Bis 30.06.2026 kam der 11 %-Pauschalabzug dazu, der mit der ersten Erhöhungsstufe entfallen ist — die Schlüsselzahl 2,7691 % der MA 6 rechnet ihn noch ein.</p>
+  <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
+  <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. In der CSV steht dieser Betrag nicht, er muss als Prozentsatz eingegeben werden.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
-  <p>Stornierte Buchungen werden übersprungen. Aufenthalte über mehr als drei Monate ununterbrochen sind befreit und werden mit 0 ausgewiesen. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
+  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
 
 </div>
@@ -234,6 +250,15 @@ function pct(e){ return e===EFF.r32?'3,2 %':(e===EFF.r50?'5 %':'8 %'); }
 // Kaufmännisch auf Cent runden. Der Umweg über toFixed ist nötig, weil
 // 1.005*100 binär 100.49999999999999 ergibt und Math.round dann abschneidet.
 function round2(n){ return Math.round(Number((n*100).toFixed(6)))/100; }
+// Frist in Monaten nach § 902 ABGB: fehlt der Anfangstag im Zielmonat, endet sie
+// am Monatsletzten. setUTCMonth allein würde den 31.03. auf den 01.07. überrollen.
+function plusMonths(ts,n){
+  const d=new Date(ts), tag=d.getUTCDate();
+  d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()+n);
+  const letzter=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+  d.setUTCDate(Math.min(tag,letzter));
+  return d.getTime();
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
 /* --- CSV --- */
@@ -311,7 +336,10 @@ function compute(csvRows, opt){
   if(ci.start<0||ci.end<0||ci.amount<0)
     throw new Error('Die Spalten Startdatum, Enddatum und Einkünfte wurden nicht gefunden. Gefundene Kopfzeile: '+head.join(' | '));
 
-  const gross = 1/(1 - (opt.fee/100));
+  // Von der Auszahlung auf das, was der Gast aufwendet: erst die einbehaltene
+  // Gastgebergebühr zurückrechnen, dann die Gast-Servicegebühr aufschlagen —
+  // beide sind nach MA-6-FAQ 16 Bestandteil des Beherbergungsentgelts.
+  const gross = (1/(1 - (opt.fee/100))) * (1 + (opt.gastfee/100));
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
   const bookings=[], months={}, warn=[], seen=Object.create(null);
 
@@ -343,8 +371,10 @@ function compute(csvRows, opt){
     if(!amt) warn.push(code+' ('+name+') hat keinen Betrag — wird mit 0 gerechnet.');
     else if(amt<0) warn.push(code+' ('+name+') hat einen negativen Betrag ('+fmt(amt)+' €) — Gutschrift oder Anpassung? Wird gegengerechnet.');
 
-    const limit=new Date(a); limit.setUTCMonth(limit.getUTCMonth()+3);
-    const exempt = b > limit.getTime();
+    // § 11 Abs. 3 WTFG: befreit ist, wer länger als drei Monate ununterbrochen
+    // Aufenthalt nimmt — und zwar als Person, also für den gesamten Aufenthalt.
+    const limit = plusMonths(a,3);
+    const exempt = b > limit;
 
     const per=amt/nights, segs=[], byKey={};
     let taxTotal=0, baseTotal=0;
@@ -434,7 +464,8 @@ function render(res, opt){
   document.getElementById('printMeta').textContent =
     'Erstellt '+new Date().toLocaleDateString('de-AT')+' · Basis: '
     +(opt.basis==='ust10'?'Beträge inkl. 10 % USt und Ortstaxe':'Beträge ohne USt, inkl. Ortstaxe')
-    +(opt.fee?' · Servicegebühr '+opt.fee.toFixed(2).replace('.',',')+' % hochgerechnet (UID '+(opt.uid==='ja'?'ja':'nein')+')':'')
+    +(opt.fee?' · Gastgebergebühr '+opt.fee.toFixed(2).replace('.',',')+' % hochgerechnet (UID '+(opt.uid==='ja'?'ja':'nein')+')':'')
+    +(opt.gastfee?' · Gast-Servicegebühr '+opt.gastfee.toFixed(2).replace('.',',')+' % aufgeschlagen':' · ohne Gast-Servicegebühr')
     +' · '+res.bookings.length+' Buchungen';
   const mt=document.getElementById('months');
   let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th><th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th></tr>';
@@ -520,6 +551,7 @@ function run(){
     const opt={basis:document.getElementById('basis').value,
                fee:((parseFloat(document.getElementById('fee').value)||0)
                     * (document.getElementById('uid').value==='ja' ? 1 : 1.2)),
+               gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
                uid:document.getElementById('uid').value,
                zaehl:document.getElementById('zaehl').value,
                konto:(document.getElementById('konto').value||'').replace(/\s/g,'')};
@@ -559,6 +591,7 @@ document.getElementById('konto').oninput=run;
   inp.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();lock();} if(e.key==='Escape'){inp.value=saved;lock();} };
 })();
 document.getElementById('fee').oninput=run;
+document.getElementById('gastfee').oninput=run;
 
 function toPDF(onlyMonths){
   document.body.classList.toggle('print-months',!!onlyMonths);
@@ -582,7 +615,7 @@ document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',
    „behoben“ um, sobald der Fix drin ist.                                    */
 if(location.search.indexOf('selftest')>=0){
   const HEAD='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte';
-  const BASE={basis:'net',fee:0,zaehl:'nights',konto:'601005590'};
+  const BASE={basis:'net',fee:0,gastfee:0,zaehl:'nights',konto:'601005590'};
   const csv=(...r)=>compute(parseCSV(HEAD+'\n'+r.join('\n')),BASE);
   const buchung=(von,bis,betrag,status)=>csv('T;'+(status||'')+';Gast;'+von+';'+bis+';;'+(betrag===undefined?'100':betrag));
   const schluessel=(e,u)=>+(e/(u+e)).toFixed(6);
@@ -620,6 +653,14 @@ if(location.search.indexOf('selftest')>=0){
   t('Stichtage','Nacht 01.07.2027 → 8 %',   buchung('01.07.2027','02.07.2027').bookings[0].segs[0],'r80');
   t('Stichtage','Aufenthalt über den Stichtag wird geteilt',
     buchung('29.06.2026','02.07.2026','300').bookings[0].segs.join(','), 'r32,r32,r50');
+  // Amtliches Beispiel, MA-6-FAQ Frage 3: Aufenthalt 25.06.–03.07.2027 → bis
+  // 30.06. gilt 5 % „inkl. der Nacht vom 30. Juni 2027 auf den 1. Juli 2027“,
+  // ab 01.07. dann 8 %.
+  const faq=buchung('25.06.2027','03.07.2027','800');
+  t('Stichtage','FAQ-Beispiel: 6 Nächte im Juni', faq.months[0].nights, 6);
+  t('Stichtage','FAQ-Beispiel: Juni zu 5 %',      faq.months[0].reg, 'r50');
+  t('Stichtage','FAQ-Beispiel: 2 Nächte im Juli', faq.months[1].nights, 2);
+  t('Stichtage','FAQ-Beispiel: Juli zu 8 %',      faq.months[1].reg, 'r80');
 
   /* Meldemonat */
   const mw=buchung('29.06.2026','02.07.2026','300');
@@ -630,8 +671,22 @@ if(location.search.indexOf('selftest')>=0){
   /* Drei-Monats-Befreiung — B1 ist noch offen */
   t('Befreiung','90 Nächte nicht befreit', buchung('01.01.2026','01.04.2026').bookings[0].exempt, false);
   t('Befreiung','91 Nächte befreit',       buchung('01.01.2026','02.04.2026').bookings[0].exempt, true);
-  t('Befreiung','Monatsende 31.03. → 01.07.', buchung('31.03.2026','01.07.2026').bookings[0].exempt, true, 'B1');
-  t('Befreiung','Monatsende 30.11. → 01.03.', buchung('30.11.2026','01.03.2027').bookings[0].exempt, true, 'B1');
+  // § 11 Abs. 3 WTFG befreit die Person, nicht den Zeitraum: „Personen, die länger
+  // als drei Monate ununterbrochen Aufenthalt nehmen, sind von der Entrichtung der
+  // Ortstaxe befreit." Ohne Einschränkung — also auch die ersten drei Monate.
+  t('Befreiung','befreiter Aufenthalt ist zur Gänze frei',
+    round2(buchung('01.01.2026','05.04.2026','10000').bookings[0].tax), 0);
+  t('Befreiung','befreiter Aufenthalt erzeugt keinen Meldemonat',
+    buchung('01.01.2026','05.04.2026','10000').months.length, 0);
+  // § 902 ABGB: drei Monate ab 31.03. enden mit Ablauf des 30.06., ab 30.11. mit
+  // Ablauf des 28.02. — der Zielmonat hat den Anfangstag nicht.
+  t('Befreiung','Monatsende 31.03. → 01.07. befreit', buchung('31.03.2026','01.07.2026').bookings[0].exempt, true);
+  t('Befreiung','Monatsende 31.03. → 30.06. nicht',   buchung('31.03.2026','30.06.2026').bookings[0].exempt, false);
+  t('Befreiung','Monatsende 30.11. → 01.03. befreit', buchung('30.11.2026','01.03.2027').bookings[0].exempt, true);
+  t('Befreiung','Monatsende 30.11. → 28.02. nicht',   buchung('30.11.2026','28.02.2027').bookings[0].exempt, false);
+  t('Befreiung','Schaltjahr 30.11.2027 → 29.02.2028 nicht', buchung('30.11.2027','29.02.2028').bookings[0].exempt, false);
+  t('Befreiung','Jahreswechsel 31.12. → 31.03. nicht', buchung('31.12.2026','31.03.2027').bookings[0].exempt, false);
+  t('Befreiung','Jahreswechsel 31.12. → 01.04. befreit', buchung('31.12.2026','01.04.2027').bookings[0].exempt, true);
 
   /* Rundung */
   t('Rundung','round2(1.005) = 1,01', round2(1.005), 1.01);
@@ -656,6 +711,15 @@ if(location.search.indexOf('selftest')>=0){
     buchung('05.08.2026','06.08.2026','').warn.some(w=>/keinen Betrag/.test(w)), true);
   ['1.644,80','1,644.80','1644.80','1644,80','€ 1.644,80'].forEach(s=>
     t('Beträge','parseMoney „'+s+'“', parseMoney(s), 1644.8));
+
+  /* Hochrechnung auf das Gastentgelt — MA-6-FAQ Frage 16 */
+  const mitGeb=(fee,gastfee)=>compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;964,00'),
+    Object.assign({},BASE,{fee:fee,gastfee:gastfee}));
+  t('Hochrechnung','ohne Gebühren bleibt der Betrag', round2(mitGeb(0,0).bookings[0].amt), 964);
+  t('Hochrechnung','3,6 % Gastgebergebühr → 1.000 €', round2(mitGeb(3.6,0).bookings[0].amt), 1000);
+  t('Hochrechnung','zusätzlich 14 % Gastgebühr → 1.140 €', round2(mitGeb(3.6,14).bookings[0].amt), 1140);
+  t('Hochrechnung','Gastgebühr erhöht die Abgabe um 14 %',
+    round2(mitGeb(3.6,14).bookings[0].tax), round2(round2(mitGeb(3.6,0).bookings[0].tax)*1.14));
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
