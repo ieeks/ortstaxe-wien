@@ -31,6 +31,9 @@ h1{font-family:var(--cond);font-weight:700;font-size:30px;letter-spacing:-.01em;
 .sub{font-family:var(--mono);font-size:12px;color:var(--ink-2);letter-spacing:.02em}
 h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:14px;margin:32px 0 10px;color:var(--ink-2);font-weight:600}
 .card{background:var(--card);border:1px solid var(--line);border-radius:2px}
+/* Tabellen dürfen breiter sein als der Bildschirm — dann scrollt die Karte,
+   nicht die Seite. Ohne das bricht auf dem Handy das ganze Layout aus. */
+.card.tab{overflow-x:auto}
 .drop{padding:34px 24px;text-align:center;border:2px dashed var(--line);background:var(--card);border-radius:2px;transition:border-color .15s,background .15s;cursor:pointer}
 .drop:hover,.drop.hot{border-color:var(--r50);background:#F7FBF9}
 .drop strong{font-family:var(--cond);font-size:19px;text-transform:uppercase;letter-spacing:.04em;display:block}
@@ -62,6 +65,7 @@ th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spac
 td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
 tr:last-child td{border-bottom:none}
 .num{font-family:var(--mono);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.part{white-space:nowrap}
 .tot td{border-top:2px solid var(--ink);font-weight:600;background:#F5F6F8}
 .mono{font-family:var(--mono)}
 .dim{color:var(--ink-2)}
@@ -120,7 +124,7 @@ details p,details li{color:var(--ink-2)}
   .paid-in{border:none!important;background:none!important;padding:0;width:auto;
     font-size:9pt;color:#000;text-align:right}
   .paid-in::placeholder{color:#666}
-  #rows-wrap{overflow:visible}
+  .card.tab{overflow:visible!important}
   td,th{padding:5px 6px}
   .note,.legend,.hint{color:#333}
   body.print-months #rows-wrap,body.print-months #rows-h,
@@ -219,7 +223,7 @@ details p,details li{color:var(--ink-2)}
   <div class="card quota" id="quota"></div>
 
   <h2>Meldung pro Monat — VIETour</h2>
-  <div class="card"><table id="months"></table></div>
+  <div class="card tab"><table id="months"></table></div>
   <div class="legend">
     <span><b style="background:var(--r32)"></b>3,2 % bis 30.06.2026 (nach 11 % Pauschalabzug)</span>
     <span><b style="background:var(--r50)"></b>5 % ab 01.07.2026</span>
@@ -228,11 +232,11 @@ details p,details li{color:var(--ink-2)}
   <div class="note">Zahlungstermin ist jeweils der 15. des Folgemonats. Die Bemessungsgrundlage ist das Beherbergungsentgelt ohne USt und ohne Ortstaxe — das ist der Wert, der ins Formular gehört, die Abgabe rechnet sich daraus.</div>
 
   <h2>Überweisungen an MA 6</h2>
-  <div class="card"><table id="pays"></table></div>
+  <div class="card tab"><table id="pays"></table></div>
   <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats (§ 13 Abs. 1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für die im Vorjahr entstandene Abgabenschuld — die deckt dieses Tool noch nicht ab.</div>
 
   <h2 id="rows-h">Buchungen</h2>
-  <div class="card" id="rows-wrap" style="overflow-x:auto"><table id="rows"></table></div>
+  <div class="card tab" id="rows-wrap"><table id="rows"></table></div>
 
   <div class="btnrow">
     <button id="pdfAll">Gesamtbericht als PDF</button>
