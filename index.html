@@ -405,9 +405,11 @@ function compute(csvRows, opt){
       warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.'); continue;
     }
     // Der deutsche Export schreibt je nach Zeitpunkt „Aktueller Gast“, „Früherer
-    // Gast“ oder „Gast bewertet“ — alles stattgefundene Aufenthalte. Ohne sie hier
-    // warnt das Tool auf jeder Zeile und die Warnliste wird wertlos.
-    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past|aktueller gast|currently hosting|fr(ü|ue)herer|bewertet|reviewed/i.test(st))
+    // Gast“ oder „Gast bewerten – läuft bald ab“ — alles stattgefundene
+    // Aufenthalte. Ohne sie hier warnt das Tool auf jeder Zeile und die
+    // Warnliste wird wertlos. „bewert“ deckt bewerten wie bewertet ab; was
+    // wirklich nicht stattgefunden hat, ist oben schon aussortiert.
+    if(st && !/best(ä|ae)tigt|confirmed|vergangen|past|aktueller gast|currently hosting|fr(ü|ue)herer|bewert|review/i.test(st))
       warn.push(code+' ('+name+') — unbekannter Status „'+st+'“, wird als bestätigt gerechnet.');
     if(isNaN(a)||isNaN(b)){ warn.push(code+' übersprungen — Datum nicht lesbar: „'+row[ci.start]+'“ / „'+row[ci.end]+'“.'); continue; }
     const nights=Math.round((b-a)/86400000);
@@ -759,7 +761,8 @@ if(location.search.indexOf('selftest')>=0){
   t('Status','unbekannter Status warnt',
     buchung('05.08.2026','06.08.2026','100','Reserviert').warn.some(w=>/unbekannter Status/.test(w)), true);
   /* Werte aus einem echten deutschen Export — dürfen nicht warnen */
-  ['Aktueller Gast','Früherer Gast','Gast bewertet','Currently hosting','Past guest'].forEach(s=>
+  ['Aktueller Gast','Früherer Gast','Gast bewertet','Gast bewerten – läuft bald ab',
+   'Currently hosting','Past guest'].forEach(s=>
     t('Status','„'+s+'“ warnt nicht',
       buchung('05.08.2026','06.08.2026','100',s).warn.length, 0));
 
@@ -868,6 +871,26 @@ if(location.search.indexOf('selftest')>=0){
   t('CSV','Einnahmen-Export wird abgewiesen', /Einnahmen-Export/.test(abgewiesen), true);
   t('CSV','Reservierungs-Export läuft weiter durch',
     compute(parseCSV(HEAD+'\nT;;Gast;19.07.2026;26.07.2026;;939,90'),BASE).bookings.length, 1);
+
+  /* Kopfzeile und Formatierung wörtlich aus einem echten Reservierungs-Export:
+     Komma getrennt, alle Felder in Quotes, Datum ohne führende Null, Betrag mit
+     Eurozeichen und geschützten Leerzeichen (U+00A0) als Tausendertrenner. */
+  const XHEAD='"Bestätigungs-Code","Status","Name des Gastes","Kontakt",'
+    +'"Anzahl der Erwachsenen","Anzahl der Kinder","Anzahl der Kleinkinder",'
+    +'"Startdatum","Enddatum","Anzahl der Nächte","Gebucht","Inserat","Einkünfte"';
+  const xr=(code,st,von,bis,n,betrag)=>'"'+code+'","'+st+'","Gast","","2","0","0","'
+    +von+'","'+bis+'","'+n+'","2026-06-04","Roof top studio","'+betrag+'"';
+  const echt=compute(parseCSV(XHEAD+'\n'
+    +xr('HMJWXDTWBD','Aktueller Gast','28.7.2026','8.9.2026','42','€ 3 134,93')+'\n'
+    +xr('HMBC9HMQQA','Gast bewerten – läuft bald ab','19.7.2026','26.7.2026','7','€ 939,90')),
+    Object.assign({},BASE,{fee:3.6,gastfee:14}));
+  t('Echter Export','„€ 3 134,93“ mit geschützten Leerzeichen',
+    round2(echt.bookings[0].amt), 3707.28);
+  t('Echter Export','Datum „28.7.2026“ ohne führende Null', echt.bookings[0].nights, 42);
+  t('Echter Export','Aufenthalt über drei Meldemonate', echt.bookings[0].parts.length, 3);
+  t('Echter Export','zweite Buchung 7 Nächte im Juli', echt.bookings[1].parts[0].month, '2026-07');
+  t('Echter Export','keine Datums- oder Statuswarnung',
+    echt.warn.filter(w=>/Datum|Status/.test(w)).length, 0);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
