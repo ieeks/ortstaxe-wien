@@ -74,6 +74,8 @@ tr:last-child td{border-bottom:none}
 .band i.tick{width:2px;background:var(--ink)}
 .flag{display:inline-block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--flag);border:1px solid var(--flag);padding:0 4px;border-radius:2px;margin-top:3px}
 .flag.ok{color:var(--ink-2);border-color:var(--line)}
+/* Ganze Sätze sind in Versalien unlesbar — eigener Zuschnitt für den Hinweis. */
+.flag.satz{display:block;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:12px;line-height:1.45;padding:6px 8px}
 .btnrow{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
 button{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;font-weight:600;padding:9px 16px;border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:2px;cursor:pointer}
 button.ghost{background:transparent;color:var(--ink)}
@@ -257,6 +259,7 @@ details p,details li{color:var(--ink-2)}
   <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Ob du selbst putzt oder eine Reinigungskraft bezahlst, ändert daran nichts — die Bemessungsgrundlage kennt keine Kostenseite, maßgeblich ist allein, was der Gast aufwendet. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
   <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Über 255 Buchungen aus sieben Jahren lag er durchgehend bei 3,6 % — anders als die Gast-Servicegebühr ist dieser Satz also stabil. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. Im Reservierungs-Export steht dieser Betrag nicht. Anders als die Gastgebergebühr ist er auch kein fester Prozentsatz — Airbnb staffelt ihn nach Dauer und Preis, belegt sind 14,0 % netto bei sieben und 9,8 % bei 42 Nächten. Aus der Auszahlung ist er nicht rekonstruierbar, weil er die Gastgeberseite nie berührt. Deshalb liest das Tool eine optionale Spalte <span class="mono">Vom Gast bezahlt</span>: steht dort der Gesamtbetrag aus der App, wird die Gebühr je Buchung exakt bestimmt und die enthaltene Umsatzsteuer abgezogen. Fehlt die Spalte, bleibt nur der Pauschalsatz — mit Hinweis, dass der Wert geschätzt ist.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
+  <p><strong>Zur 30-Nächte-Grenze gibt es inzwischen Judikatur.</strong> Das Verwaltungsgericht Wien hat am 27.03.2026 zu VGW-011/099/1929/2026-13 ein Straferkenntnis behoben, weil „die Überlassungsdauer … 31 Tage nie unterschritten hat“, und daraus abgeleitet, „eine kurzfristige Beherbergung ab einem Vertragszeitraum von 31 Tagen (30 Nächten) nicht mehr anzunehmen“. Das stützt die Trennlinie, die dieses Tool zieht. <strong>Zwei Einschränkungen sind wichtig:</strong> Das Gericht hielt ausdrücklich fest, dass 30 Tage „keine harte Grenze“ sind und eine <em>gemischte</em> Überlassung mit teils kürzeren, teils längeren Zeiträumen „je nach Lage des Sachverhalts in toto“ sehr wohl unter § 119 Abs. 2a lit. a BO fallen kann — die Befreiung trägt also vor allem dort, wo <em>ausschließlich</em> ab 31 Tagen vermietet wird. Und die ordentliche Revision wurde zugelassen, weil höchstgerichtliche Rechtsprechung zu dieser Frage fehlt. Deshalb zeigt das Tool beide Zahlen und entscheidet nichts für dich.</p>
   <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Verrechnest du ein Frühstück gesondert, ist dessen Anteil nach § 12 Abs. 2 abzuziehen — das erkennt das Tool aus der CSV nicht, den Betrag musst du selbst mindern. Die Reinigungsgebühr gehört dagegen hinein (siehe oben) und darf nicht herausgerechnet werden. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
 
@@ -474,21 +477,31 @@ function compute(csvRows, opt){
 }
 
 /* --- 90-Tage-Zähler (Bauordnung) --- */
-function occupancy(bookings, mode){
+function occupancy(bookings, mode, heute){
+  // Für die Planung zählt nicht nur, was schon verbraucht ist, sondern auch,
+  // was bereits fest vergeben ist. „heute“ ist nur für den Selbsttest da.
+  const t0 = heute!==undefined ? heute
+    : (()=>{ const n=new Date(); return Date.UTC(n.getFullYear(),n.getMonth(),n.getDate()); })();
   const years={};
   bookings.forEach(b=>{
     if(b.cls==='lang') return;
     const last = b.b + (mode==='days' ? 0 : -86400000);
     for(let ts=b.a; ts<=last; ts+=86400000){
       const y=new Date(ts).getUTCFullYear();
-      if(!years[y]) years[y]={kurz:new Set(),grau:new Set()};
+      if(!years[y]) years[y]={kurz:new Set(),grau:new Set(),von:ts};
+      if(ts<years[y].von) years[y].von=ts;
       years[y][b.cls==='kurz'?'kurz':'grau'].add(ts);
     }
   });
   return Object.keys(years).sort().map(y=>{
     const kurz=years[y].kurz, grau=years[y].grau;
-    const grauOnly=[...grau].filter(d=>!kurz.has(d)).length;
-    return {year:+y, kurz:kurz.size, grau:grauOnly};
+    const grauOnly=[...grau].filter(d=>!kurz.has(d));
+    const kurzV=[...kurz].filter(d=>d<t0).length;
+    const grauV=grauOnly.filter(d=>d<t0).length;
+    return {year:+y, kurz:kurz.size, grau:grauOnly.length,
+            kurzV:kurzV, kurzP:kurz.size-kurzV,
+            grauV:grauV, grauP:grauOnly.length-grauV,
+            von:years[y].von};
   });
 }
 function renderQuota(bookings, mode){
@@ -502,7 +515,9 @@ function renderQuota(bookings, mode){
     return '<div style="margin-bottom:18px">'
       +'<div class="quota-head"><div class="quota-big" style="'+(over?'color:var(--flag)':'')+'">'
         +(over?('+'+(d.kurz-90)):rest)+'<small>'+(over?unit+' über dem Limit':unit+' offen von 90 · '+d.year)+'</small></div>'
-      +'<div class="mono" style="font-size:12px;color:var(--ink-2)">verbraucht '+d.kurz+' / 90'+(d.grau?' · Graubereich '+d.grau:'')+'</div></div>'
+      +'<div class="mono" style="font-size:12px;color:var(--ink-2)">'
+        +'verbraucht '+d.kurzV+' · fest gebucht '+d.kurzP+' · zusammen '+d.kurz+' / 90'
+        +(d.grau?'<br>Graubereich: verbraucht '+d.grauV+' · fest gebucht '+d.grauP:'')+'</div></div>'
       +'<div class="meter">'
         +'<i class="'+(over?'over':'used')+'" style="width:'+w(Math.min(d.kurz,90))+'%"></i>'
         +(d.grau?'<i class="grey" style="width:'+w(Math.min(d.grau,Math.max(0,90-d.kurz)))+'%"></i>':'')
@@ -510,6 +525,15 @@ function renderQuota(bookings, mode){
       +'<div class="quota-legend"><span><b style="background:var(--r50)"></b>Aufenthalte bis 30 '+unit+'</span>'
         +(d.grau?'<span><b style="background:var(--r80);opacity:.55"></b>31 '+unit+' bis 3 Monate — Einzelfall</span>':'')
         +'<span>Worst Case offen: '+worst+'</span></div>'
+      // Der Zähler kann nur zählen, was in der Datei steht. Beginnt das Jahr
+      // erst später, fehlen womöglich frühere Aufenthalte — und dann ist jede
+      // Zahl hier zu günstig.
+      +(d.von>Date.UTC(d.year,0,1)
+        ? '<div class="flag satz" style="margin-top:8px">Diese Datei kennt '+d.year+' erst ab '
+          +new Date(d.von).toLocaleDateString('de-AT',{timeZone:'UTC'})
+          +'. Frühere Aufenthalte desselben Jahres fehlen im Zähler — für eine belastbare Zahl '
+          +'die CSV über das ganze Kalenderjahr exportieren.</div>'
+        : '')
     +'</div>';
   }).join('')
   + '<div class="note" style="margin-top:0">Gezählt werden nur bestätigte Buchungen aus dieser CSV. Baurechtlich zählt bereits das <em>Anbieten</em> der Wohnung — leerstehende, aber inserierte Tage sind hier nicht erfasst. Aufenthalte über 3 Monate gelten nicht als Kurzzeitvermietung und bleiben außen vor.</div>';
@@ -966,6 +990,47 @@ if(location.search.indexOf('selftest')>=0){
     round2(mitEingabe('',{T:3633.26}).paid), 3633.26);
   t('Eingabe','Eingabe zählt auch für den Meldemonat',
     round2(mitEingabe('',{T:3633.26}).parts[1].tax), 125.47);
+
+  /* 90-Tage-Zähler der Bauordnung. Bisher ungetestet — die echten Aufenthalte
+     eines Jahres, Stichtag 20.08.2026, damit verbraucht und fest gebucht
+     auseinanderfallen. */
+  const jahr=csv(
+    'A;;G;30.01.2026;21.03.2026;;100',   /* 50 N  Graubereich */
+    'B;;G;22.03.2026;24.04.2026;;100',   /* 33 N  Graubereich */
+    'C;;G;04.05.2026;11.05.2026;;100',   /*  7 N  kurz */
+    'D;;G;13.05.2026;18.05.2026;;100',   /*  5 N  kurz */
+    'E;;G;19.05.2026;23.05.2026;;100',   /*  4 N  kurz */
+    'F;;G;26.05.2026;31.05.2026;;100',   /*  5 N  kurz */
+    'G;;G;03.06.2026;07.06.2026;;100',   /*  4 N  kurz */
+    'H;;G;18.06.2026;19.07.2026;;100',   /* 31 N  Graubereich */
+    'I;;G;19.07.2026;26.07.2026;;100',   /*  7 N  kurz */
+    'J;;G;28.07.2026;08.09.2026;;100');  /* 42 N  Graubereich, läuft über den Stichtag */
+  const STICHTAG=Date.UTC(2026,7,20);
+  const q=occupancy(jahr.bookings,'nights',STICHTAG)[0];
+  t('90-Tage','Jahr erkannt', q.year, 2026);
+  t('90-Tage','kurz gesamt 32 Nächte', q.kurz, 32);
+  t('90-Tage','kurz verbraucht 32', q.kurzV, 32);
+  t('90-Tage','kurz fest gebucht 0', q.kurzP, 0);
+  t('90-Tage','Graubereich gesamt 156', q.grau, 156);
+  t('90-Tage','Graubereich verbraucht 137', q.grauV, 137);
+  t('90-Tage','Graubereich fest gebucht 19', q.grauP, 19);
+  t('90-Tage','Aufteilung ergibt die Gesamtzahl',
+    q.kurzV+q.kurzP+q.grauV+q.grauP, q.kurz+q.grau);
+  t('90-Tage','früheste Nacht wird gemerkt', q.von, Date.UTC(2026,0,30));
+  t('90-Tage','58 Nächte offen, wenn nur kurz zählt', 90-q.kurz, 58);
+  t('90-Tage','98 über dem Limit, wenn der Graubereich zählt', 90-q.kurz-q.grau, -98);
+
+  const zaehlung=(...r)=>occupancy(csv(...r).bookings,'nights',STICHTAG);
+  t('90-Tage','doppelt belegte Nacht zählt einmal',
+    zaehlung('A;;G;05.08.2026;08.08.2026;;100','B;;G;06.08.2026;09.08.2026;;100')[0].kurz, 4);
+  t('90-Tage','Tage-Zählweise nimmt den Abreisetag dazu',
+    occupancy(csv('A;;G;05.08.2026;10.08.2026;;100').bookings,'days',STICHTAG)[0].kurz, 6);
+  t('90-Tage','Nächte-Zählweise ohne Abreisetag',
+    zaehlung('A;;G;05.08.2026;10.08.2026;;100')[0].kurz, 5);
+  t('90-Tage','über drei Monate zählt gar nicht',
+    zaehlung('A;;G;01.01.2026;01.05.2026;;100').length, 0);
+  t('90-Tage','Jahreswechsel trennt die Zählung',
+    zaehlung('A;;G;28.12.2025;04.01.2026;;100').length, 2);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
