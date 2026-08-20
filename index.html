@@ -96,6 +96,10 @@ button:focus-visible,.drop:focus-visible{outline:2px solid var(--r50);outline-of
 details{margin-top:26px;font-size:13.5px}
 summary{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;cursor:pointer;color:var(--ink-2)}
 details p,details li{color:var(--ink-2)}
+/* Der Ablauf steht oben und soll knapp bleiben: eine Zeile je Schritt. */
+#ablauf{margin-top:14px}
+#ablauf ol{margin:8px 0 0;padding-left:20px}
+#ablauf li{margin:3px 0;line-height:1.5}
 /* 90-Tage-Zähler */
 .quota{padding:18px 20px}
 .quota-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
@@ -148,6 +152,18 @@ details p,details li{color:var(--ink-2)}
   <span>oder klicken — Airbnb → Reservierungen → Exportieren. Die Datei bleibt im Browser.</span>
   <input type="file" id="file" accept=".csv,text/csv">
 </div>
+
+<details id="ablauf" open>
+  <summary>Ablauf</summary>
+  <ol>
+    <li>Airbnb-Export ziehen — Zeitraum <strong>ganzes Kalenderjahr</strong>, nicht nur den Meldemonat.</li>
+    <li>Datei oben ablegen. Die Monatstabelle steht sofort, die Gastgebühr ist noch geschätzt.</li>
+    <li><strong>Gastbeträge laden</strong> — deine gespeicherte Datei vom letzten Mal.</li>
+    <li>Leer gebliebene Felder aus der App nachtragen: <em>Verdienste → Vom Gast bezahlt</em>.</li>
+    <li>Speichern, solange <strong>Buchungen + Gastbeträge als CSV</strong> einen Punkt trägt.</li>
+    <li>PDF ziehen, Verwendungszweck kopieren, überweisen — fällig am 15. des Folgemonats.</li>
+  </ol>
+</details>
 
 <div class="card opts">
   <div class="opt">
@@ -747,6 +763,9 @@ function run(){
   }
 }
 function load(f){
+  // Sobald Daten da sind, gehört der Bildschirm den Zahlen. Aufklappbar
+  // bleibt der Ablauf trotzdem — nichts wird unwiederbringlich weggeklickt.
+  document.getElementById('ablauf').open=false;
   // Eingaben bleiben stehen. Sie hängen am Bestätigungs-Code, und der gehört
   // dauerhaft zu genau einer Buchung — ein gemerkter Betrag kann also nie auf
   // einer fremden landen. Wer die Gastbeträge einträgt und danach den frischen
