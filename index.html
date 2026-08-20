@@ -181,6 +181,15 @@ details p,details li{color:var(--ink-2)}
   im Sinne des § 12 WTFG. <strong>In der Reservierungs-CSV steht dieser Betrag nicht</strong> —
   der Prozentsatz muss aus deiner Airbnb-Abrechnung kommen. Nutzt du das Modell, bei dem du als
   Gastgeber die gesamte Gebühr trägst, gibt es keine Gast-Servicegebühr: dann hier 0 eintragen.
+  <br><br>
+  <strong>Den Nettosatz eintragen, nicht den Betrag von der Abrechnung.</strong> Airbnb weist die
+  Gast-Servicegebühr <em>inklusive</em> 20 % Umsatzsteuer aus, und die Umsatzsteuer gehört nach
+  § 12 Abs. 2 WTFG nicht in die Bemessungsgrundlage. Rechenweg aus der Abrechnung
+  „Vom Gast bezahlt“:
+  <span class="mono">Servicegebühr für Gäste ÷ 1,20 ÷ (Nächtigungsbetrag + Reinigungsgebühr) × 100</span>.
+  Beispiel: 163,80 ÷ 1,20 = 136,50, davon auf 936,00 + 39,00 = 975,00 ergibt <strong>14,0 %</strong>.
+  Der ungeprüfte Bruttowert wäre 16,8 % gewesen und hätte die Bemessungsgrundlage um die darin
+  enthaltene Umsatzsteuer von 27,30 € zu hoch angesetzt.
 </div>
 
 <div id="error" class="err hide"></div>
@@ -235,7 +244,7 @@ details p,details li{color:var(--ink-2)}
   <p>Abzugsfähig ist damit sonst nichts. Die <strong>Reinigungsgebühr</strong> gehört hinein: Die MA-6-FAQ (Frage 15) hält fest, dass zum Entgelt „alles“ zählt, „was die Gäste für den Aufenthalt in einer Unterkunft aufzuwenden haben“, und die Endreinigung eine damit verbundene Nebenleistung ist — ebenso das BFG am 23.04.2024 zu RV/7400107/2023. Dasselbe gilt für <strong>Zuschläge</strong> wie Late Check-out, Early Check-in, Upgrade oder Haustier (FAQ 13). Garage, Wellness oder Barkonsumation, die erst vor Ort separat anfallen, zählen in der Regel nicht dazu.</p>
   <p><strong>Servicegebühren beider Seiten zählen.</strong> Die von Airbnb einbehaltene Gastgebergebühr mindert die Bemessungsgrundlage nicht — deshalb wird von der Auszahlung hochgerechnet. Ohne hinterlegte UID stellt Airbnb Ireland 20 % österreichische Umsatzsteuer auf diese Gebühr in Rechnung, der Abzug von der Auszahlung beträgt dann 3,6 % statt 3,0 %. Die <strong>Gast-Servicegebühr</strong> gehört nach FAQ 16 ebenfalls in die Bemessungsgrundlage: Service- und Plattformgebühren, die dem Gast in Rechnung gestellt werden, sind „ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG“. Dazu passt § 11 Abs. 1 letzter Satz — die Abgabepflicht besteht unabhängig davon, ob der Gast selbst oder ein Dritter für ihn zahlt. In der CSV steht dieser Betrag nicht, er muss als Prozentsatz eingegeben werden.</p>
   <p><strong>90-Tage-Zähler:</strong> Die Wiener Bauordnung erlaubt seit 1. Juli 2024 eine kurzfristige Vermietung von höchstens 90 Tagen pro Kalenderjahr ohne Ausnahmebewilligung nach § 129 Abs. 1a BO — und das nur außerhalb einer Wohnzone und ohne Aufgabe des Wohnsitzes in der Wohnung. Als Richtwert für „kurzfristig“ nennt die Stadt 2 bis 30 Tage, deshalb zählt das Tool Aufenthalte bis 30 Nächte voll, Aufenthalte darüber bis 3 Monate separat als Graubereich, längere gar nicht. Doppelt belegte Tage werden nur einmal gezählt. Ob Nächte oder belegte Kalendertage die richtige Zählweise sind, ist nicht eindeutig geregelt — im Zweifel die strengere wählen.</p>
-  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Frühstück, Reinigung und andere gesondert verrechnete Leistungen gehören nicht in die Bemessungsgrundlage — die stecken in der Airbnb-Spalte „Einkünfte“ aber drin, wenn du sie als Gebühr verrechnest. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
+  <p>Stornierte, abgelehnte, abgelaufene und noch nicht bestätigte Buchungen werden übersprungen — findet kein entgeltlicher Aufenthalt statt, fällt nach FAQ 9 keine Ortstaxe an. Aufenthalte über mehr als drei Monate ununterbrochen sind nach § 11 Abs. 3 WTFG befreit, und zwar zur Gänze: befreit ist die Person, nicht bloß der Zeitraum jenseits der drei Monate. Die Frist endet nach § 902 ABGB am Monatsletzten, wenn der Anreisetag im Zielmonat fehlt. Wer die Befreiung geltend macht, „hat die dafür maßgeblichen Umstände nachzuweisen“ — die Belege gehören also aufbewahrt. Verrechnest du ein Frühstück gesondert, ist dessen Anteil nach § 12 Abs. 2 abzuziehen — das erkennt das Tool aus der CSV nicht, den Betrag musst du selbst mindern. Die Reinigungsgebühr gehört dagegen hinein (siehe oben) und darf nicht herausgerechnet werden. Rundung erfolgt kaufmännisch auf Monatsebene.</p>
 </details>
 
 </div>
@@ -721,6 +730,25 @@ if(location.search.indexOf('selftest')>=0){
   t('Hochrechnung','zusätzlich 14 % Gastgebühr → 1.140 €', round2(mitGeb(3.6,14).bookings[0].amt), 1140);
   t('Hochrechnung','Gastgebühr erhöht die Abgabe um 14 %',
     round2(mitGeb(3.6,14).bookings[0].tax), round2(round2(mitGeb(3.6,0).bookings[0].tax)*1.14));
+
+  /* Gegenprobe an einer echten Airbnb-Abrechnung, Anreise 30.04.2026, 7 Nächte.
+     Die Abrechnung weist aus: Nächtigung 936,00 + Reinigung 39,00 = 975,00, davon
+     3 % Gastgebergebühr + 20 % USt = 35,10 → Auszahlung 939,90. Gast-Servicegebühr
+     163,80 brutto = 136,50 netto = 14,0 % von 975,00. Bemessungsgrundlage 1.111,50.
+     Prüft die Hochrechnung gegen belegte Zahlen statt gegen eine Annahme. */
+  const beleg=compute(parseCSV(HEAD+'\nT;;Gast;30.04.2026;07.05.2026;;939,90'),
+    Object.assign({},BASE,{fee:3.6,gastfee:14})).bookings[0];
+  t('Abrechnung','939,90 € Auszahlung → 975,00 € vor Gast-Servicegebühr',
+    round2(939.90/(1-0.036)), 975);
+  t('Abrechnung','163,80 € brutto Gast-Servicegebühr sind 14,0 % netto',
+    round2(163.80/1.2/975*100), 14);
+  t('Abrechnung','Bemessungsgrundlage 1.111,50 €', round2(beleg.amt), 1111.5);
+  t('Abrechnung','7 Nächte', beleg.nights, 7);
+  t('Abrechnung','Ortstaxe gesamt 30,78 €', round2(beleg.tax), 30.78);
+  t('Abrechnung','April 2026 — 1 Nacht, 4,40 €', round2(beleg.parts[0].tax), 4.4);
+  t('Abrechnung','Mai 2026 — 6 Nächte, 26,38 €', round2(beleg.parts[1].tax), 26.38);
+  t('Abrechnung','Monatssummen ergeben die Gesamtabgabe',
+    round2(round2(beleg.parts[0].tax)+round2(beleg.parts[1].tax)), 30.78);
 
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
