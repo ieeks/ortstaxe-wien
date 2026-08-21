@@ -335,6 +335,33 @@ if(location.search.indexOf('selftest')>=0){
   t('90-Tage','Jahreswechsel trennt die Zählung',
     zaehlung('A;;G;28.12.2025;04.01.2026;;100').length, 2);
 
+  /* Jahressummen für die Abgabenerklärung nach § 13 Abs. 2 WTFG. Entscheidend
+     ist, dass je Meldeperiode gerundet wird — die Erklärung muss zu den
+     einzelnen Überweisungen passen, nicht zu einem am Jahresende gerundeten
+     Gesamtwert. */
+  const jr=jahressummen(jahr.months);
+  t('Erklärung','ein Kalenderjahr erkannt', jr.length, 1);
+  t('Erklärung','Jahr 2026', jr[0].jahr, 2026);
+  t('Erklärung','neun Meldemonate', jr[0].monate, 9);
+  t('Erklärung','Jahressumme = Summe der Meldeperioden', jr[0].tax, (()=>{
+    const proMonat={};
+    jahr.months.forEach(m=>{ proMonat[m.month]=(proMonat[m.month]||0)+m.tax; });
+    return round2(Object.values(proMonat).reduce((s,v)=>s+round2(v),0));
+  })());
+  t('Erklärung','früheste Periode wird gemerkt', jr[0].von, '2026-01');
+
+  /* Ein Aufenthalt über den Jahreswechsel gehört in zwei Erklärungen */
+  const zwei=jahressummen(csv('A;;G;30.12.2025;03.01.2026;;1000').months);
+  t('Erklärung','Jahreswechsel ergibt zwei Jahre', zwei.length, 2);
+  t('Erklärung','2025 bekommt zwei Nächte', zwei[0].nights, 2);
+  t('Erklärung','2026 bekommt zwei Nächte', zwei[1].nights, 2);
+  /* Je Periode gerundet ergibt 27,70, die ungerundete Buchung 27,69. Gemeldet
+     und bezahlt wird periodenweise, also ist 27,70 der maßgebliche Wert. Beide
+     festgehalten, damit eine Änderung der Rundung auffällt. */
+  t('Erklärung','Summe der Jahre 27,70 €', round2(zwei[0].tax+zwei[1].tax), 27.70);
+  t('Erklärung','ungerundete Buchung 27,69 € — ein Cent Differenz',
+    round2(csv('A;;G;30.12.2025;03.01.2026;;1000').bookings[0].tax), 27.69);
+
   /* CSV */
   t('CSV','Semikolon + Quotes + Komma im Namen',
     compute(parseCSV(HEAD+'\nT;;"Müller, Anna";05.06.2026;07.06.2026;;"1.200,50"'),BASE).bookings[0].nights, 2);

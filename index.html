@@ -252,7 +252,11 @@ details p,details li{color:var(--ink-2)}
 
   <h2>Überweisungen an MA 6</h2>
   <div class="card tab"><table id="pays"></table></div>
-  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats (§ 13 Abs. 1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für die im Vorjahr entstandene Abgabenschuld — die deckt dieses Tool noch nicht ab.</div>
+  <div class="note">Verwendungszweck ist die Abgabenkontonummer plus Monat und Jahr des Aufenthalts, also MMJJJJ ohne Trennzeichen. Fällig jeweils am 15. des Folgemonats (§ 13 Abs. 1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für die im Vorjahr entstandene Abgabenschuld — die Jahressummen dafür stehen unten.</div>
+
+  <h2 id="jahr-h">Abgabenerklärung</h2>
+  <div class="card tab"><table id="years"></table></div>
+  <div class="note" id="jahrNote"></div>
 
   <h2 id="rows-h">Buchungen</h2>
   <div class="card tab" id="rows-wrap"><table id="rows"></table></div>
@@ -530,6 +534,28 @@ function occupancy(bookings, mode, heute){
             von:years[y].von};
   });
 }
+/* Summen je Kalenderjahr für die Abgabenerklärung nach § 13 Abs. 2 WTFG.
+   Gerundet wird je Meldeperiode, nicht am Jahresende — so wird auch bezahlt,
+   und die Erklärung muss zu den zwölf Überweisungen passen. */
+function jahressummen(months){
+  const proMonat={}, jahre={};
+  months.forEach(m=>{
+    if(!proMonat[m.month]) proMonat[m.month]={base:0,tax:0,nights:0};
+    proMonat[m.month].base+=m.base; proMonat[m.month].tax+=m.tax;
+    proMonat[m.month].nights+=m.nights;
+  });
+  Object.keys(proMonat).sort().forEach(k=>{
+    const j=k.slice(0,4);
+    if(!jahre[j]) jahre[j]={jahr:+j, monate:0, nights:0, base:0, tax:0, von:k};
+    const e=jahre[j];
+    e.monate++; e.nights+=proMonat[k].nights;
+    e.base+=round2(proMonat[k].base);
+    e.tax +=round2(proMonat[k].tax);
+    if(k<e.von) e.von=k;
+  });
+  return Object.values(jahre).sort((a,b)=>a.jahr-b.jahr);
+}
+
 function renderQuota(bookings, mode){
   const data=occupancy(bookings,mode), el=document.getElementById('quota');
   if(!data.length){ el.innerHTML='<div class="dim">Keine kurzfristigen Vermietungen in den Daten.</div>'; return; }
@@ -663,6 +689,28 @@ function render(res, opt){
       else fallback(t,done);
     };
   });
+
+  const jahre=jahressummen(res.months);
+  let y='<tr><th>Kalenderjahr</th><th class="num">Meldemonate</th><th class="num">Nächte</th>'
+    +'<th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th><th>Erklärung fällig</th></tr>';
+  jahre.forEach(j=>{
+    y+='<tr><td class="mono">'+j.jahr+'</td><td class="num">'+j.monate+'</td>'
+      +'<td class="num">'+j.nights+'</td><td class="num">'+fmt(j.base)+'</td>'
+      +'<td class="num"><strong>'+fmt(j.tax)+'</strong></td>'
+      +'<td class="mono" style="font-size:12px">15.02.'+(j.jahr+1)+'</td></tr>';
+  });
+  document.getElementById('years').innerHTML=y;
+  // Die Erklärung gilt für das ganze Jahr. Deckt die Datei es nicht ab, ist
+  // jede Summe hier zu niedrig — und zwar ohne dass man es sieht.
+  const luecken=jahre.filter(j=>j.von!==j.jahr+'-01');
+  document.getElementById('jahrNote').innerHTML =
+    'Die Erklärung ist bis 15. Februar des Folgejahres elektronisch einzubringen und umfasst '
+    +'die gesamte im Kalenderjahr entstandene Abgabenschuld. Gerundet wird je Meldeperiode, '
+    +'damit die Jahressumme zu den einzelnen Überweisungen passt.'
+    +(luecken.length ? '<br><br><strong>Unvollständig:</strong> '
+      +luecken.map(j=>j.jahr+' beginnt in dieser Datei erst mit '+monthLabel(j.von)).join(', ')
+      +'. Für eine Erklärung muss die CSV das ganze Kalenderjahr abdecken — sonst ist die Summe zu niedrig.'
+      : '');
 
   const rt=document.getElementById('rows');
   // Fokus und Cursor merken: getippt wird in diese Tabelle, und sie wird bei
