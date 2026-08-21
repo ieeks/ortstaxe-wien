@@ -11,14 +11,18 @@ dieses Projekt-Pages darunter — `ieeks.github.io/ortstaxe-wien/` leitet dorthi
 
 ## Harte Regeln
 
-- **Eine einzige Datei.** Alles steckt in `index.html` — Markup, CSS im `<style>`,
-  JS im `<script>`. Nicht in separate `.css`/`.js`-Dateien aufsplitten.
+- **Das Tool ist eine Datei.** Alles steckt in `index.html` — Markup, CSS im
+  `<style>`, JS im `<script>`. Nicht in separate `.css`/`.js`-Dateien aufsplitten.
+  Einzige Ausnahme ist `selftest.js`: die Prüfungen werden nur bei `?selftest`
+  nachgeladen, und ohne die Datei läuft das Tool vollständig. Umgekehrt gilt das
+  nicht — `selftest.js` braucht die Funktionen aus `index.html`.
 - **Kein Build-Schritt.** Kein npm, kein Bundler, kein Framework. Einzige externe
   Abhängigkeit sind die Google Fonts per CDN.
 - **Kein localStorage, kein sessionStorage.** Auch nicht „nur für die Einstellungen".
 - **Deutschsprachige UI.** Auch Fehlermeldungen und Hinweistexte.
 - **Schriften:** IBM Plex Sans, IBM Plex Sans Condensed, IBM Plex Mono.
-- Änderungen gehen immer direkt in `index.html`.
+- Änderungen am Tool gehen immer direkt in `index.html`, neue Testfälle in
+  `selftest.js`. Beide Dateien liegen nebeneinander im Repo-Wurzelverzeichnis.
 
 ## Rechenlogik nicht anfassen
 
@@ -37,7 +41,11 @@ enthaltener Ortstaxe gerechnet wird.
 mit 1.644,80 € Gastentgelt, Basis ohne USt, Gebühr 0 → **64,58 €** gesamt
 (19,10 € Juni bei 13 Nächten + 45,48 € Juli bei 18 Nächten).
 
-## Aufbau von index.html
+Der komplette Selbsttest läuft über `index.html?selftest` — auch per Doppelklick
+aus dem Dateisystem. Bei jeder Änderung vorher und nachher aufrufen; die Anzeige
+nennt bestandene, fehlgeschlagene und bekannt offene Fälle.
+
+## Aufbau
 
 - `parseCSV` — eigener Parser, kommt mit `,` und `;` sowie Quotes zurecht
 - `findCol` — normalisiert Spaltennamen, matcht DE und EN, dann Teilstring-Fallback
@@ -45,7 +53,11 @@ mit 1.644,80 € Gastentgelt, Basis ohne USt, Gebühr 0 → **64,58 €** gesamt
 - `occupancy` / `renderQuota` — 90-Tage-Zähler der Bauordnung, getrennt nach
   `kurz` (bis 30 Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
 - `render` — Monatstabelle, Überweisungen, Buchungsdetail, Warnhinweise
+- `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
+  exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
+  Buchungsliste zu ersetzen
 - Print-CSS erzeugt die PDFs, `body.print-months` blendet für die Kurzfassung aus
+- `selftest.js` — alle Prüfungen, per `?selftest` nachgeladen
 
 ## Offene Punkte
 
