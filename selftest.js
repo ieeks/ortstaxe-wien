@@ -727,6 +727,45 @@ if(location.search.indexOf('selftest')>=0){
   t('Zusammenführen','zusammengeführter Bestand rechnet',
     compute(alsCsvZeilen(bestand),BASE).bookings.length, 2);
 
+  /* Dubletten (F08). Vorher warnte das Tool zwar, rechnete aber beide Zeilen —
+     aus 4,76 € wurden 9,52 €. */
+  const dup=csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.08.2026;06.08.2026;;100');
+  t('Dubletten','identische Zeile wird nur einmal gerechnet', dup.bookings.length, 1);
+  t('Dubletten','und nur einmal besteuert',
+    fmt(round2(dup.months.reduce((s,m)=>s+round2(m.tax),0))), '4,76');
+  t('Dubletten','identische Dublette wird gemeldet',
+    dup.warn.some(w=>/identischen Daten/.test(w)), true);
+
+  const dupA=csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.09.2026;07.09.2026;;200');
+  t('Dubletten','abweichende Dublette wird nur einmal gerechnet', dupA.bookings.length, 1);
+  t('Dubletten','gerechnet wird die erste Zeile', dupA.bookings[0].nights, 1);
+  t('Dubletten','Widerspruch wird als solcher benannt',
+    dupA.warn.some(w=>/abweichenden Daten/.test(w)), true);
+  t('Dubletten','die Warnung nennt beide Beträge',
+    dupA.warn.some(w=>/100,00/.test(w)&&/200,00/.test(w)), true);
+  t('Dubletten','verschiedene Codes bleiben zwei Buchungen',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100','HM2;;G;05.08.2026;06.08.2026;;100').bookings.length, 2);
+  t('Dubletten','dreifach vorhanden ergibt trotzdem eine Buchung',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.08.2026;06.08.2026;;100',
+        'HM1;;G;05.08.2026;06.08.2026;;100').bookings.length, 1);
+
+  /* Herkunft des Betrags (F10). Ein gefülltes, aber verworfenes Feld sah in der
+     Tabelle aus wie ein Beleg — gerechnet wurde mit dem Pauschalsatz. */
+  const PH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const pcsv=(zeile,o)=>compute(parseCSV(PH+'\n'+zeile),Object.assign({},BASE,o||{}));
+  t('Betragsherkunft','brauchbarer Gastbetrag gilt als Beleg',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;150').bookings[0].betragQuelle, 'beleg');
+  t('Betragsherkunft','zu kleiner Gastbetrag ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;50', {gastfee:14}).bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','leeres Feld ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;').bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','unlesbarer Wert ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;xyz').bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','der verworfene Wert bleibt trotzdem sichtbar',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;50', {gastfee:14}).bookings[0].paid, 50);
+  t('Betragsherkunft','ein Beleg wird nicht als geschätzt gemeldet',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;150', {gastfee:14}).warn.some(w=>/pauschal/.test(w)), false);
+
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
   const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};

@@ -165,7 +165,7 @@ function render(res, opt){
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
-      +'<td class="num col-paid"><input class="paid-in mono'+(b.paid?' belegt':'')+'" inputmode="decimal" '
+      +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
         +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
@@ -190,6 +190,7 @@ function render(res, opt){
   window.__csvMonths=baueCsvMonate(res,opt.konto);
   window.__csvRows=baueCsvBuchungen(res);
   window.__csvPaid=baueCsvGastbetraege(res);
+  exportierteSchluessel=new Set(res.bookings.map(b=>b.key));
 }
 
 /* --- Steuerung --- */
@@ -197,6 +198,9 @@ let lastText=null;
 /* Buchungsdokumente aus Firestore, sobald angemeldet und ein Objekt gewählt
    ist. null heißt: es wird wie bisher aus der CSV gerechnet. */
 let wolkeBestand=null;
+/* Schlüssel der zuletzt exportierten Buchungen — damit „gespeichert“ nur dann
+   gilt, wenn auch wirklich alles Eingetippte in der Datei steht (F03). */
+let exportierteSchluessel=new Set();
 /* Getipptes lebt nur in dieser Sitzung. Wer die Seite verlässt, ohne zu
    exportieren, verliert es — deshalb ein sichtbarer Marker und die Rückfrage
    des Browsers. */
@@ -309,6 +313,23 @@ document.getElementById('dlMonths').onclick=()=>download('ortstaxe-monate.csv',w
 document.getElementById('dlRows').onclick=()=>download('ortstaxe-buchungen.csv',window.__csvRows||'');
 document.getElementById('dlPaid').onclick=()=>{
   download('ortstaxe-gastbetraege.csv',window.__csvPaid||'');
+  // Der Export enthält nur die gerade angezeigten Buchungen. Wer einen Betrag
+  // eintippt und danach eine CSV lädt, in der diese Buchung fehlt, hätte den
+  // Marker sonst gelöscht bekommen, obwohl der Wert nirgends gespeichert ist.
+  const fehlend=Object.keys(paidRaw).filter(k=>paidRaw[k]!=='' && !exportierteSchluessel.has(k));
+  if(fehlend.length){
+    const info=document.getElementById('paidInfo');
+    // Die Codes nennen, sonst ist der Hinweis eine Sackgasse: ohne sie weiß
+    // niemand, welche CSV geladen werden muss, um den Wert zu sichern.
+    info.textContent='Achtung: '+fehlend.length+' eingetippte'
+      +(fehlend.length===1?'r Gastbetrag gehört':' Gastbeträge gehören')
+      +' zu Buchungen, die gerade nicht angezeigt werden, und '
+      +(fehlend.length===1?'ist':'sind')+' deshalb nicht in dieser Datei: '
+      +fehlend.slice(0,10).join(', ')+(fehlend.length>10?' …':'')
+      +'. Eine CSV mit diesen Buchungen laden und noch einmal exportieren.';
+    info.classList.remove('hide');
+    return;                       // ungespeichert bleibt stehen
+  }
   ungespeichert=false; markiereSpeicherstand();
 };
 
@@ -327,9 +348,12 @@ function ladeGastbetraege(f){
       codes.forEach(c=>{ paidRaw[c]=map[c]; });
       run();
       const treffer=[...document.querySelectorAll('.paid-in')].filter(x=>map[x.dataset.key]!==undefined).length;
-      const offen=[...document.querySelectorAll('.paid-in')].filter(x=>x.value==='').length;
+      // Gezählt wird, was die Rechnung wirklich benutzt — ein gefülltes, aber
+      // verworfenes Feld ist kein Beleg.
+      const geschaetzt=[...document.querySelectorAll('.paid-in')].filter(x=>!x.classList.contains('belegt')).length;
       info.textContent=codes.length+' Gastbeträge gelesen · '+treffer+' den angezeigten Buchungen zugeordnet'
-        +(offen?' · '+offen+' Buchung'+(offen===1?'':'en')+' noch ohne Betrag':' · alle Buchungen belegt');
+        +(geschaetzt?' · '+geschaetzt+' Buchung'+(geschaetzt===1?'':'en')+' noch geschätzt'
+                    :' · alle Buchungen beleggestützt');
       info.classList.remove('hide');
     }catch(ex){
       err.textContent=ex.message; err.classList.remove('hide'); info.classList.add('hide');

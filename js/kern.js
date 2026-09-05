@@ -286,14 +286,19 @@ function compute(csvRows, opt){
       warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ist kein lesbarer Geldwert. '
         +'Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
     const paid=gPaid.wert;
-    let amt;
+    // Woher der gerechnete Betrag stammt. Ohne dieses Feld sah ein verworfener
+    // Gastbetrag in der Tabelle aus wie ein belegter: das Feld war gefüllt,
+    // gerechnet wurde aber mit dem Pauschalsatz.
+    let amt, betragQuelle;
     if(paid>0 && paid+0.005>=basis){
       amt = basis + (paid-basis)/USTF_SERVICE;   // Gast-Servicegebühr brutto → netto
+      betragQuelle = 'beleg';
     }else{
       if(paid>0) warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ('+fmt(paid)
         +' €) liegt unter dem hochgerechneten Entgelt ('+fmt(basis)
         +' €). Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
       amt = basis*guestF; pauschal++;
+      betragQuelle = 'geschaetzt';
     }
 
     // Nur Bestätigtes ist eine Nächtigung. Anfragen, ausstehende und abgelaufene
@@ -316,8 +321,23 @@ function compute(csvRows, opt){
       const cn=parseInt(row[ci.nights],10);
       if(cn>0&&cn!==nights) warn.push(code+' ('+name+') — CSV nennt '+cn+' Nächte, aus den Daten ergeben sich '+nights+'. Bitte Datumsformat prüfen.');
     }
-    if(seen[code]) warn.push(code+' kommt mehrfach vor — bitte prüfen.');
-    seen[code]=1;
+    // Derselbe Bestätigungs-Code darf nur einmal in die Meldung. Vorher warnte
+    // das Tool zwar, rechnete aber beide Zeilen — aus 4,76 € wurden 9,52 €.
+    // Bei abweichenden Daten wird der Widerspruch benannt statt still eine
+    // der beiden Zeilen zu bevorzugen; gerechnet wird mit der ersten.
+    if(seen[code]){
+      const v=seen[code];
+      if(v.a===a && v.b===b && v.netPay===netPay)
+        warn.push(code+' ('+name+') kommt mehrfach mit identischen Daten vor — '
+          +'die Zeile wird nur einmal gerechnet.');
+      else
+        warn.push(code+' ('+name+') kommt mehrfach vor, aber mit abweichenden Daten '
+          +'('+csvDatum(v.a)+'–'+csvDatum(v.b)+' / '+fmt(v.netPay)+' € gegen '
+          +csvDatum(a)+'–'+csvDatum(b)+' / '+fmt(netPay)+' €). Gerechnet wird die erste '
+          +'Zeile — welche stimmt, gehört vor der Meldung geklärt.');
+      continue;
+    }
+    seen[code]={a:a,b:b,netPay:netPay};
     if(!amt) warn.push(code+' ('+name+') hat keinen Betrag — wird mit 0 gerechnet.');
     else if(amt<0) warn.push(code+' ('+name+') hat einen negativen Betrag ('+fmt(amt)+' €) — Gutschrift oder Anpassung? Wird gegengerechnet.');
 
@@ -345,7 +365,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
