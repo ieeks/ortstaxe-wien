@@ -29,7 +29,8 @@ import {
   alsBuchungsdokument,
   alsCsvZeilen,
   textHash,
-  baueSchnappschuss
+  baueSchnappschuss,
+  verschmelzeBuchungen
 } from './js/kern.js';
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
@@ -674,6 +675,57 @@ if(location.search.indexOf('selftest')>=0){
   t('Hash','anderer Text, andere Kennung', textHash('abc')===textHash('abd'), false);
   t('Hash','acht Stellen', textHash('abc').length, 8);
   t('Hash','leerer Text ergibt eine Kennung', textHash('').length, 8);
+
+  /* Zusammenführen beim Import. Die wichtigste Eigenschaft: ein Export über
+     einen einzelnen Monat darf den Rest des Jahres nicht löschen. */
+  const dok=(code,gastbetrag,quelle,von)=>{
+    const v=von||'2026-08-01';
+    const bis=v.slice(0,8)+('0'+(+v.slice(8,10)+2)).slice(-2);   // zwei Nächte
+    return {code:code, schemaVersion:SCHEMA_VERSION, name:'G', status:'Bestätigt',
+      von:v, bis:bis, auszahlung:100,
+      gastbetrag:gastbetrag===undefined?null:gastbetrag,
+      gastbetragQuelle:quelle||null, objektId:'obj1'};
+  };
+
+  const vm1=verschmelzeBuchungen([dok('A'),dok('B'),dok('C')],[dok('B')]);
+  t('Zusammenführen','Teilimport löscht nichts', vm1.unberuehrt.map(d=>d.code).join(','), 'A,C');
+  t('Zusammenführen','Teilimport schreibt nur die enthaltene Buchung',
+    vm1.schreiben.map(d=>d.code).join(','), 'B');
+  t('Zusammenführen','neue Buchung wird übernommen',
+    verschmelzeBuchungen([dok('A')],[dok('B')]).schreiben.map(d=>d.code).join(','), 'B');
+  t('Zusammenführen','leerer Bestand nimmt alles',
+    verschmelzeBuchungen([],[dok('A'),dok('B')]).schreiben.length, 2);
+  t('Zusammenführen','leerer Import lässt alles unberührt',
+    verschmelzeBuchungen([dok('A')],[]).unberuehrt.length, 1);
+
+  /* Gastbeträge: der Import weiß oft nichts davon, weil die Spalte im rohen
+     Airbnb-Export gar nicht vorkommt. Dann darf er nichts wegnehmen. */
+  const vm2=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A')]);
+  t('Zusammenführen','Import ohne Gastbetrag behält den gespeicherten',
+    vm2.schreiben[0].gastbetrag, 150);
+  t('Zusammenführen','und behält dessen Herkunft', vm2.schreiben[0].gastbetragQuelle, 'manuell');
+  t('Zusammenführen','das ist kein Konflikt', vm2.konflikte.length, 0);
+
+  const vm3=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A',120,'datei')]);
+  t('Zusammenführen','abweichender Wert über einen manuellen meldet Konflikt', vm3.konflikte.length, 1);
+  t('Zusammenführen','Konflikt nennt alten und neuen Wert',
+    vm3.konflikte[0].alt+'→'+vm3.konflikte[0].neu, '150→120');
+  t('Zusammenführen','der Import gewinnt trotzdem', vm3.schreiben[0].gastbetrag, 120);
+
+  const vm4=verschmelzeBuchungen([dok('A',150,'datei')],[dok('A',120,'datei')]);
+  t('Zusammenführen','Datei über Datei ist kein Konflikt', vm4.konflikte.length, 0);
+  const vm5=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A',150,'datei')]);
+  t('Zusammenführen','gleicher Wert ist kein Konflikt', vm5.konflikte.length, 0);
+
+  /* Geänderte Stammdaten schlagen durch */
+  const vm6=verschmelzeBuchungen([dok('A',null,null,'2026-08-01')],[dok('A',null,null,'2026-09-01')]);
+  t('Zusammenführen','geändertes Anreisedatum wird übernommen', vm6.schreiben[0].von, '2026-09-01');
+
+  /* Und der zusammengeführte Bestand muss wieder rechenbar sein */
+  const vmAll=verschmelzeBuchungen([dok('A',null,null,'2026-08-01')],[dok('B',null,null,'2026-09-01')]);
+  const bestand=vmAll.unberuehrt.concat(vmAll.schreiben);
+  t('Zusammenführen','zusammengeführter Bestand rechnet',
+    compute(alsCsvZeilen(bestand),BASE).bookings.length, 2);
 
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};

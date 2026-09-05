@@ -563,6 +563,44 @@ function baueSchnappschuss(dokumente, einstellungen, herkunft){
   };
 }
 
+/* Zusammenführen beim Import. Zwei Regeln, beide aus konkreten Fehlern:
+
+   1. Ein Export über einen Monat darf nicht den Rest des Jahres löschen.
+      Es wird gemischt, nie ersetzt — was nicht in der neuen Datei steht,
+      bleibt unberührt. Löschen ist immer eine ausdrückliche Handlung.
+   2. Ein von Hand eingetragener Gastbetrag überlebt einen Import, der an
+      dieser Stelle nichts mitbringt. Bringt der Import einen abweichenden
+      Wert mit, gewinnt er — aber das wird als Konflikt gemeldet, damit es
+      nicht still passiert. */
+function verschmelzeBuchungen(gespeichert, neu){
+  const alt=Object.create(null);
+  (gespeichert||[]).forEach(d=>{ if(d&&d.code!=null) alt[d.code]=d; });
+  const neueCodes=Object.create(null);
+  const schreiben=[], konflikte=[];
+
+  (neu||[]).forEach(n=>{
+    neueCodes[n.code]=1;
+    const a=alt[n.code];
+    if(!a){ schreiben.push(n); return; }
+    const d=Object.assign({},a,n);
+    if(n.gastbetrag==null && a.gastbetrag!=null){
+      // Der Import weiß nichts über den Gastbetrag — Gespeichertes behalten
+      d.gastbetrag=a.gastbetrag;
+      d.gastbetragQuelle=a.gastbetragQuelle;
+    } else if(n.gastbetrag!=null && a.gastbetrag!=null
+              && a.gastbetragQuelle==='manuell' && n.gastbetrag!==a.gastbetrag){
+      konflikte.push({code:n.code, alt:a.gastbetrag, neu:n.gastbetrag});
+    }
+    schreiben.push(d);
+  });
+
+  return {
+    schreiben: schreiben,
+    konflikte: konflikte,
+    unberuehrt: (gespeichert||[]).filter(d=>d&&!neueCodes[d.code])
+  };
+}
+
 /* Öffentliche Fläche des Rechenkerns. Gesammelt am Ende, damit die
    Definitionen oben unverändert lesbar bleiben. */
 export {
@@ -601,5 +639,6 @@ export {
   alsBuchungsdokument,
   alsCsvZeilen,
   textHash,
-  baueSchnappschuss
+  baueSchnappschuss,
+  verschmelzeBuchungen
 };
