@@ -23,7 +23,13 @@ import {
   monatsSummen,
   baueCsvMonate,
   baueCsvBuchungen,
-  baueCsvGastbetraege
+  baueCsvGastbetraege,
+  SCHEMA_VERSION,
+  isoTag,
+  alsBuchungsdokument,
+  alsCsvZeilen,
+  textHash,
+  baueSchnappschuss
 } from './js/kern.js';
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
@@ -606,6 +612,68 @@ if(location.search.indexOf('selftest')>=0){
   t('Datumsformat','ISO mit Text dahinter wird abgelehnt', isNaN(parseDate('2026-08-01xyz')), true);
   t('Datumsformat','ISO mit Uhrzeit bleibt gültig', parseDate('2026-08-01T12:30:00'), parseDate('2026-08-01'));
   t('Datumsformat','ISO mit Zeitzone bleibt gültig', parseDate('2026-08-01T00:00:00+02:00'), parseDate('2026-08-01'));
+
+  /* Datenmodell für die Synchronisierung. Der entscheidende Nachweis ist der
+     Rundlauf: CSV → rechnen → Dokumente → zurück → rechnen muss dieselben
+     Zahlen ergeben. Sonst wäre der gespeicherte Stand nicht der gerechnete. */
+  const MH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const mcsv=(...r)=>compute(parseCSV(MH+'\n'+r.join('\n')),BASE);
+  const hin=mcsv('HM1;Bestätigt;Anna;18.06.2026;19.07.2026;;1644,80;',
+                 'HM2;Bestätigt;Bernd;01.08.2026;03.08.2026;;100,00;150,00',
+                 'HM3;Bestätigt;Cem;01.01.2026;02.04.2026;;2000,00;');
+  const docs=hin.bookings.map(b=>alsBuchungsdokument(b,'obj1'));
+  const zurueck=compute(alsCsvZeilen(docs),BASE);
+
+  t('Datenmodell','Rundlauf behält alle Buchungen', zurueck.bookings.length, hin.bookings.length);
+  t('Datenmodell','Rundlauf behält die Meldemonate',
+    zurueck.months.map(m=>m.month+':'+m.nights).join('|'), hin.months.map(m=>m.month+':'+m.nights).join('|'));
+  t('Datenmodell','Rundlauf behält die Ortstaxe je Monat',
+    zurueck.months.map(m=>fmt(round2(m.tax))).join('|'), hin.months.map(m=>fmt(round2(m.tax))).join('|'));
+  t('Datenmodell','Rundlauf behält die Jahressumme',
+    fmt(jahressummen(zurueck.months)[0].tax), fmt(jahressummen(hin.months)[0].tax));
+  /* Zugriff über den Code, nicht über die Position: alsCsvZeilen sortiert
+     nach Anreisedatum, damit der Bestand aus der Datenbank immer gleich
+     herauskommt, egal in welcher Reihenfolge die Dokumente ankommen. */
+  const nach=(r,c)=>r.bookings.filter(b=>b.code===c)[0];
+  t('Datenmodell','Rundlauf behält den Gastbetrag', nach(zurueck,'HM2').paid, 150);
+  ['HM1','HM2','HM3'].forEach(c=>{
+    t('Datenmodell','Rundlauf behält die Befreiung: '+c, nach(zurueck,c).exempt, nach(hin,c).exempt);
+    t('Datenmodell','Rundlauf behält die Ortstaxe: '+c,
+      fmt(round2(nach(zurueck,c).tax)), fmt(round2(nach(hin,c).tax)));
+  });
+  t('Datenmodell','Rundlauf behält den Referenzfall 64,58 €',
+    fmt(round2(nach(zurueck,'HM1').tax)), '64,58');
+  t('Datenmodell','Dokumente kommen sortiert zurück',
+    zurueck.bookings.map(b=>b.code).join(','), 'HM3,HM1,HM2');
+
+  /* Das Dokument selbst */
+  const d0=docs[0];
+  t('Datenmodell','Dokument trägt die Schemaversion', d0.schemaVersion, SCHEMA_VERSION);
+  t('Datenmodell','Dokument trägt das Objekt', d0.objektId, 'obj1');
+  t('Datenmodell','Datum als ISO-Zeichenkette, nicht als Timestamp', d0.von, '2026-06-18');
+  t('Datenmodell','Dokument speichert die Auszahlung roh', d0.auszahlung, 1644.8);
+  t('Datenmodell','ohne Gastbetrag steht null', d0.gastbetrag, null);
+  t('Datenmodell','mit Gastbetrag steht die Herkunft', docs[1].gastbetragQuelle, 'datei');
+  t('Datenmodell','kein gerechneter Wert im Dokument',
+    ['nights','tax','base','amt','parts','segs'].some(k=>k in d0), false);
+  t('Datenmodell','ISO-Tag ist zeitzonenfest', isoTag(Date.UTC(2026,0,1)), '2026-01-01');
+
+  /* Schnappschuss */
+  const schn=baueSchnappschuss(docs,{basis:'net',fee:3},{grund:'import',datei:'a.csv',hash:textHash('x')});
+  t('Schnappschuss','enthält alle Buchungen', schn.buchungen.length, 3);
+  t('Schnappschuss','merkt sich die Anzahl', schn.anzahl, 3);
+  t('Schnappschuss','merkt sich die Einstellungen', schn.einstellungen.fee, 3);
+  t('Schnappschuss','merkt sich Dateiname und Grund', schn.datei+'/'+schn.grund, 'a.csv/import');
+  t('Schnappschuss','trägt die Schemaversion', schn.schemaVersion, SCHEMA_VERSION);
+  t('Schnappschuss','ist aus einem Schnappschuss wieder rechenbar',
+    fmt(round2(compute(alsCsvZeilen(schn.buchungen),BASE).months[0].tax)),
+    fmt(round2(hin.months[0].tax)));
+
+  /* Dateikennung */
+  t('Hash','gleicher Text, gleiche Kennung', textHash('abc'), textHash('abc'));
+  t('Hash','anderer Text, andere Kennung', textHash('abc')===textHash('abd'), false);
+  t('Hash','acht Stellen', textHash('abc').length, 8);
+  t('Hash','leerer Text ergibt eine Kennung', textHash('').length, 8);
 
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};

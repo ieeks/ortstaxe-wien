@@ -345,7 +345,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
@@ -487,6 +487,82 @@ function baueCsvGastbetraege(res){
       fmt(b.netPay),b.paid?fmt(b.paid):''])).join('\n');
 }
 
+/* --- Datenmodell für die Synchronisierung ---------------------------------
+   Gespeichert wird die Buchung, nicht der Meldemonat: eine Buchung vom
+   18.06. bis 19.07. gehört in zwei Meldeperioden, der 90-Tage-Zähler rechnet
+   übers Kalenderjahr und die Drei-Monats-Befreiung über den ganzen Aufenthalt.
+   Der Monat ist eine abgeleitete Sicht und wird nie gespeichert — sonst gäbe
+   es zwei Wahrheiten, die auseinanderlaufen können.
+
+   Pfade:
+     users/{uid}/einstellungen/aktuell
+     users/{uid}/objekte/{objektId}
+     users/{uid}/objekte/{objektId}/buchungen/{code}
+     users/{uid}/objekte/{objektId}/schnappschuesse/{zeitpunkt}
+
+   Datumsangaben stehen als ISO-Zeichenkette, nicht als Firestore-Timestamp:
+   die ganze Rechnung arbeitet auf UTC-Kalendertagen (siehe mkDate/plusMonths),
+   und ein Timestamp würde genau die Zeitzonenfehler zurückholen, die dort
+   vermieden werden. */
+const SCHEMA_VERSION = 1;
+
+function isoTag(ts){ return new Date(ts).toISOString().slice(0,10); }
+
+/* Aus einer gerechneten Buchung das Dokument, das gespeichert wird. Bewusst
+   nur Rohdaten — Nächte, Sätze, Bemessungsgrundlage und Ortstaxe werden aus
+   diesen Feldern jederzeit neu gerechnet. */
+function alsBuchungsdokument(b, objektId){
+  return {
+    code: b.code, objektId: objektId||null, schemaVersion: SCHEMA_VERSION,
+    name: b.name||'', status: b.status||'',
+    von: isoTag(b.a), bis: isoTag(b.b),
+    auszahlung: b.netPay,
+    gastbetrag: b.paid>0 ? b.paid : null,
+    gastbetragQuelle: b.paid>0 ? (b.gastbetragQuelle||'datei') : null
+  };
+}
+
+/* Der Rückweg: gespeicherte Dokumente in genau die Tabelle, die compute()
+   ohnehin liest. Damit bleibt der geprüfte Rechenweg unverändert — es gibt
+   keinen zweiten Pfad in die Berechnung hinein. */
+function alsCsvZeilen(dokumente){
+  const kopf=['Bestätigungs-Code','Status','Name des Gastes','Startdatum','Enddatum',
+              'Anzahl der Nächte','Einkünfte','Vom Gast bezahlt'];
+  const zeilen=dokumente.slice().sort((x,y)=>String(x.von).localeCompare(String(y.von))
+                                            ||String(x.code).localeCompare(String(y.code)))
+    .map(d=>[d.code, d.status||'', d.name||'', d.von, d.bis, '',
+             fmt(Number(d.auszahlung)||0),
+             d.gastbetrag==null ? '' : fmt(Number(d.gastbetrag))]);
+  return [kopf].concat(zeilen);
+}
+
+/* Kennung der importierten Datei — erkennt denselben Export ein zweites Mal,
+   ohne den Inhalt zu speichern. FNV-1a, 32 Bit; kein Sicherheitszweck. */
+function textHash(text){
+  let h=0x811c9dc5;
+  const s=String(text==null?'':text);
+  for(let i=0;i<s.length;i++){
+    h^=s.charCodeAt(i);
+    h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;
+  }
+  return ('0000000'+h.toString(16)).slice(-8);
+}
+
+/* Vollständiger Stand vor einer überschreibenden Änderung. Ein Dokument statt
+   Revisionen je Monat: der Jahresbestand sind wenige hundert Buchungen, und
+   ein einzelnes Dokument lässt sich ohne Zusammensetzen zurückspielen. */
+function baueSchnappschuss(dokumente, einstellungen, herkunft){
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    grund: (herkunft&&herkunft.grund)||'import',
+    datei: (herkunft&&herkunft.datei)||null,
+    hash:  (herkunft&&herkunft.hash)||null,
+    anzahl: dokumente.length,
+    einstellungen: Object.assign({}, einstellungen),
+    buchungen: dokumente
+  };
+}
+
 /* Öffentliche Fläche des Rechenkerns. Gesammelt am Ende, damit die
    Definitionen oben unverändert lesbar bleiben. */
 export {
@@ -519,5 +595,11 @@ export {
   csvDatum,
   baueCsvMonate,
   baueCsvBuchungen,
-  baueCsvGastbetraege
+  baueCsvGastbetraege,
+  SCHEMA_VERSION,
+  isoTag,
+  alsBuchungsdokument,
+  alsCsvZeilen,
+  textHash,
+  baueSchnappschuss
 };

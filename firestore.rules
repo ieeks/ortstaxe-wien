@@ -1,0 +1,73 @@
+rules_version = '2';
+
+/* Zugriffsregeln für ortstaxe-wien.
+
+   Grundsatz: Es gibt genau einen Eigentümer je Datensatz, und das ist die
+   angemeldete Person. Nichts ist öffentlich lesbar — in den Buchungen stehen
+   Klarnamen von Gästen, Aufenthaltszeiträume und Beträge.
+
+   Bewusst schlicht gehalten: Regeln, die man nicht laufen lassen kann, sollten
+   nicht klug sein. Vor dem ersten echten Einsatz gehören sie gegen den
+   Firestore-Emulator geprüft (`firebase emulators:start --only firestore`).
+
+   Pfade siehe js/kern.js, Abschnitt „Datenmodell für die Synchronisierung“. */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function ich(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function istTag(wert) {
+      return wert is string && wert.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    /* Eine Buchung ist der gespeicherte Rohdatensatz. Alles Gerechnete —
+       Nächte, Sätze, Bemessungsgrundlage, Ortstaxe — wird im Client aus
+       diesen Feldern hergeleitet und darf hier gar nicht erst ankommen. */
+    function gueltigeBuchung(code) {
+      let d = request.resource.data;
+      return d.schemaVersion is int
+          && d.schemaVersion >= 1 && d.schemaVersion <= 1
+          && d.code is string && d.code == code
+          && d.name is string && d.name.size() <= 200
+          && d.status is string && d.status.size() <= 100
+          && istTag(d.von) && istTag(d.bis) && d.von <= d.bis
+          && d.auszahlung is number
+          && (d.gastbetrag == null || d.gastbetrag is number)
+          && (d.objektId == null || d.objektId is string);
+    }
+
+    match /users/{uid} {
+      allow read, write: if ich(uid);
+
+      match /einstellungen/{dok} {
+        allow read, write: if ich(uid);
+      }
+
+      match /objekte/{objektId} {
+        allow read, write: if ich(uid);
+
+        match /buchungen/{code} {
+          allow read, delete: if ich(uid);
+          allow create, update: if ich(uid) && gueltigeBuchung(code);
+        }
+
+        /* Ein Schnappschuss, der überschrieben werden kann, schützt nicht vor
+           einem fehlerhaften Import. Deshalb anlegen und lesen, aber nicht
+           ändern. Löschen bleibt erlaubt, damit alte Stände aufräumbar sind. */
+        match /schnappschuesse/{zeitpunkt} {
+          allow read, create, delete: if ich(uid);
+          allow update: if false;
+        }
+      }
+    }
+
+    /* Alles andere bleibt zu. Das ist ohnehin die Voreinstellung; hier steht
+       es, damit ein späterer Pfad nicht versehentlich offen ist. */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

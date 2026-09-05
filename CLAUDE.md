@@ -85,6 +85,40 @@ Zeilen ohne Code bekommen einen Schlüssel mit `#`, den `load()` vor jeder neuen
 Datei verwirft — sonst landet der Betrag auf der Buchung, die zufällig in
 derselben Zeile steht.
 
+## Synchronisierung (im Aufbau)
+
+Gespeichert wird die **Buchung**, nie der Meldemonat. Eine Buchung vom 18.06. bis
+19.07. gehört in zwei Meldeperioden, der 90-Tage-Zähler rechnet übers Kalenderjahr
+und die Drei-Monats-Befreiung über den ganzen Aufenthalt — der Monat ist eine
+abgeleitete Sicht. Nichts Gerechnetes geht in die Datenbank, sonst gibt es zwei
+Wahrheiten, die auseinanderlaufen.
+
+    users/{uid}/einstellungen/aktuell
+    users/{uid}/objekte/{objektId}
+    users/{uid}/objekte/{objektId}/buchungen/{code}
+    users/{uid}/objekte/{objektId}/schnappschuesse/{zeitpunkt}
+
+Datumsangaben stehen als ISO-Zeichenkette, **nicht** als Firestore-Timestamp: die
+Rechnung arbeitet auf UTC-Kalendertagen, ein Timestamp holt genau die
+Zeitzonenfehler zurück, die `mkDate`/`plusMonths` vermeiden.
+
+`alsCsvZeilen` führt gespeicherte Dokumente in genau die Tabelle zurück, die
+`compute` ohnehin liest. Es gibt damit keinen zweiten Weg in die Berechnung —
+der geprüfte Rechenweg bleibt der einzige. Der Selbsttest fährt den Rundlauf
+CSV → rechnen → Dokumente → zurück → rechnen und vergleicht Meldemonate,
+Ortstaxe je Buchung, Jahressumme und Befreiung.
+
+Vor jedem überschreibenden Import wird ein Schnappschuss abgelegt: ein Dokument
+mit dem vollständigen Stand statt Revisionen je Monat — der Jahresbestand sind
+wenige hundert Buchungen, und ein einzelnes Dokument spielt sich ohne
+Zusammensetzen zurück.
+
+`firestore.rules` sind **noch nicht gegen den Emulator geprüft**. Vor dem ersten
+echten Einsatz: `firebase emulators:start --only firestore`.
+
+Was noch fehlt: das Firebase-Projekt selbst (Console), `.firebaserc`, die
+Anmeldung und `js/daten.js` mit dem eigentlichen Lesen und Schreiben.
+
 ## Offene Punkte
 
 Siehe `TODO.md` und die Issues im Repo.
