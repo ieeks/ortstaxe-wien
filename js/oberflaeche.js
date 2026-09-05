@@ -196,6 +196,13 @@ function render(res, opt){
   rt.innerHTML=g;
   rt.querySelectorAll('.paid-in').forEach(el=>{
     el.oninput=()=>{
+      // Während ein Vorgang läuft — Laden, Wiederherstellen, Import — gehört
+      // das Feld nicht zu dem, was gerade gilt: der Wert würde weder
+      // gespeichert noch überleben. Also gar nicht erst übernehmen, statt ihn
+      // anzuzeigen und still zu verwerfen. Das Feld ist dabei auch im DOM
+      // gesperrt; hier steht die Sperre für alles, was das Ereignis anders
+      // auslöst.
+      if(sperren){ el.value=el.defaultValue; return; }
       // Ein geleertes Feld hebt die Überschreibung auf, statt als ausdrückliche
       // Null zu gelten. Vorher blieb '' liegen, behielt Vorrang vor der Datei
       // und die Rechnung fiel auf die Schätzung zurück — die Warnung riet
@@ -299,8 +306,17 @@ function load(f){
     lastText=r.result;
     wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
     neuerBestand();             // wartende Aufträge gehören zum alten Bestand
+    // Solange der Import läuft, zeigt die Tabelle eine Datei, die noch
+    // nirgends steht. Eine Eingabe darin erzeugte keinen Auftrag — es gibt
+    // noch keinen Wolken-Bestand — und wurde am Ende mit paidRaw weggeräumt:
+    // der Dateiwert war gespeichert, die manuelle Änderung darüber verloren,
+    // und die Anzeige meldete „gespeichert“. Anders als bei einem verfrühten
+    // Erfolgsstatus holt hier kein späterer Auftrag den Wert nach. Vor dem
+    // ersten Rendern sperren, danach in beiden Ausgängen freigeben.
+    const laeuftImport = !!(daten && konto && objektId);
+    if(laeuftImport) sperreAn();
     run();
-    if(daten && konto && objektId) speichereImport(f.name, r.result);
+    if(laeuftImport) speichereImport(f.name, r.result).then(sperreAus, sperreAus);
   };
   r.readAsText(f,'utf-8');
 }
@@ -634,6 +650,13 @@ async function importieren(ziel, opt, version, dateiname, text){
    anzeigte. Entprellt, weil bei jedem Tastendruck gefeuert wird. */
 let tippUhr=null;
 function speichereEingabe(){
+  // Die Sperre hier ist die zweite Barriere, nicht die erste: den Weg über das
+  // Gastbetragsfeld hält schon der Eingabe-Handler auf, und einen dennoch
+  // eingereihten Auftrag verwirft die Bestandsversion beim Ausführen. Sie
+  // bleibt trotzdem stehen — der Fehlerfall ist stiller Datenverlust, und die
+  // anderen Wege hierher (Optionsfelder, nachgeladene Gastbeträge) sind im DOM
+  // nicht gesperrt. Der Mutationslauf zeigt sie als ungeprüft: kein Ablauf
+  // hängt allein an ihr.
   if(!(daten && konto && objektId) || !wolkeBestand || sperren) return;
   stand('nicht gespeichert', true);
   clearTimeout(tippUhr);
