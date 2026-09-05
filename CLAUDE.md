@@ -187,6 +187,43 @@ Datenbank setzt beide zurück — sonst warnt der Browser vor einem Datenverlust
 den es nicht gibt, und der Punkt wird bedeutungslos. Ohne Anmeldung bleibt es
 beim alten Verhalten: erst der CSV-Export löscht ihn.
 
+**Eine Kette legt nur die Reihenfolge fest, nicht die Zugehörigkeit.** Jeder
+Auftrag hängt an drei Dingen, und alle drei werden **beim Einreihen** festgehalten,
+nie beim Ausführen: am **Objekt** (`ziel`), am **Bestand** (`bestandVersion`) und
+am **Bearbeitungsstand** (`eingabeStand`). Fehlt eine dieser Bindungen, führt die
+Kette einen Auftrag treu aus, der längst zu etwas anderem gehört — die vier
+Befunde der fünften Nachprüfung waren genau das:
+
+- `speichereImport` band das Ziel nicht, `importieren` las `objektId` erst beim
+  Ausführen. Die Prüfungen darin verglichen `objektId` mit sich selbst und
+  konnten nie auslösen; ein wartender Import landete unter dem Objekt, auf das
+  inzwischen umgestellt worden war.
+- `bestandVersion` steigt, sobald der Bestand als Ganzes ausgetauscht wird:
+  Objektwechsel, Laden, Import, Wiederherstellung, neue Datei. Ein Auftrag aus
+  einem älteren Bestand wird verworfen. Ein gewöhnliches Autospeichern erhöht
+  sie **nicht** — sonst verwürfe es die eigene, noch wartende Folgeeingabe.
+- `eingabeStand` steigt bei jeder Eingabe. Ein Schreibabschluss darf `paidRaw`
+  nur leeren und „gespeichert“ nur melden, wenn er **diesen** Stand geschrieben
+  hat. Sonst steht die Bestätigung über einer Änderung, die noch aussteht.
+
+**Ein Vorgang, der den Bestand austauscht, sperrt die Eingaben (`sperren`).**
+Abwarten allein genügt nicht: während einer laufenden Wiederherstellung blieb die
+alte Tabelle bearbeitbar, und ein Tastendruck erzeugte daraus einen Auftrag, der
+sich brav dahinter einreihte — und sie damit rückgängig machte. Gesperrt wird
+**vor dem ersten `await`**, gezählt (Vorgänge verschachteln sich: die
+Wiederherstellung lädt am Ende selbst) und sowohl im DOM (`disabled`) als auch in
+`speichereEingabe`.
+
+**Ein Schreibabschluss aktualisiert den Bestand, er ersetzt ihn nicht.**
+`wolkeBestand=docs` warf jede wegen unlesbarer Eingabe zurückgestellte Zeile aus
+dem lokalen Bestand; die nächste Rechnung kannte sie nicht mehr, schrieb nichts
+und meldete trotzdem „gespeichert“ — die Korrektur kam nie an. Übernommen werden
+nur die geschriebenen Dokumente, der Rest bleibt stehen.
+
+**`optionen()` liefert eine Kopie von `paidRaw`, keinen Verweis.** Ein
+festgehaltener Auftrag muss mit den Werten rechnen, die beim Festhalten galten,
+sonst sieht er die Tastendrücke, die nach ihm kamen.
+
 **Alle Schreibvorgänge laufen durch eine Kette (`inReihe`).** `clearTimeout`
 stoppt nur einen wartenden Timer — hat sein Rückruf den Datenbankaufruf schon
 begonnen, läuft der weiter und schriebe nach einer Wiederherstellung den alten

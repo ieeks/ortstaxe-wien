@@ -290,6 +290,108 @@ await seite.waitForTimeout(3500);                    // alter Auftrag längst du
 await seite.evaluate(() => { window.__schreibVerzug = 0; });
 t('HW2 bleibt entfernt', !!(await db()).buchungen[oW].HW2, false);
 
+/* --- Fünfte Nachprüfung (main f0ebaec): R5-01 bis R5-04 -------------------
+   Alle vier entstanden aus den Korrekturen der vierten Runde. Die Kette legte
+   die Reihenfolge fest, aber nicht, woran ein Auftrag hängt. */
+
+console.log('\nWartender Import landet nicht im inzwischen gewechselten Objekt');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HR1;Bestätigt;Rosa;05.08.2027;06.08.2027;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleR = (await db()).buchungen;
+const oR = Object.keys(alleR).filter(o => alleR[o].HR1)[0];
+await seite.click('#objektNeu');                      // zweites Objekt anlegen
+await seite.waitForTimeout(900);
+const objsR = await seite.$$eval('#objekt option', o => o.map(x => x.value));
+const zweitR = objsR.filter(o => o !== oR)[0];
+if (zweitR) {
+  await seite.selectOption('#objekt', oR);            // zurück auf das erste
+  await seite.waitForTimeout(700);
+  // Die Kette mit einem laufenden Auftrag belegen, damit der Import wartet.
+  await seite.evaluate(() => { window.__schreibVerzug = 2000; });
+  await seite.fill('.paid-in[data-key="HR1"]', '150,00');
+  await seite.waitForTimeout(1400);                   // Schreibvorgang läuft
+  await lade(KOPF + 'HR9;Bestätigt;Rudi;10.08.2027;11.08.2027;100,00;\n');
+  await seite.waitForTimeout(200);                    // Import steht in der Kette
+  await seite.selectOption('#objekt', zweitR);        // jetzt wechseln
+  await seite.waitForTimeout(4500);
+  await seite.evaluate(() => { window.__schreibVerzug = 0; });
+  t('Import landet nicht im zweiten Objekt',
+    !!((await db()).buchungen[zweitR] || {}).HR9, false);
+}
+
+console.log('\nEingabe während der Wiederherstellung hebt sie nicht auf');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HS1;Bestätigt;Sara;05.09.2027;06.09.2027;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleS = (await db()).buchungen;
+const oS = Object.keys(alleS).filter(o => alleS[o].HS1)[0];
+await lade(KOPF + 'HS1;Bestätigt;Sara;05.09.2027;06.09.2027;100,00;\n'
+                + 'HS2;Bestätigt;Timo;10.09.2027;11.09.2027;100,00;\n');
+await seite.waitForTimeout(900);
+t('zwei Buchungen vor der Wiederherstellung', Object.keys((await db()).buchungen[oS]).length, 2);
+await seite.evaluate(() => { window.__standVerzug = 1800; });
+await seite.selectOption('#stand', {index: 1});       // Stand mit nur HS1
+await seite.click('#standZurueck');
+await seite.waitForTimeout(400);                      // Wiederherstellung läuft
+t('Gastbetragsfeld ist währenddessen gesperrt',
+  await seite.$eval('.paid-in[data-key="HS1"]', n => n.disabled).catch(() => 'kein Feld'), true);
+// Ereignis trotzdem auslösen: geprüft wird die Sperre im Code, nicht nur die
+// im DOM. Ohne sie erzeugt der Tastendruck aus dem alten Bestand einen
+// Auftrag, der sich hinter die Wiederherstellung reiht und sie zurückdreht.
+await seite.evaluate(() => {
+  const el = document.querySelector('.paid-in[data-key="HS1"]');
+  if (el) { el.value = '150,00'; el.dispatchEvent(new Event('input', {bubbles: true})); }
+});
+await seite.waitForTimeout(4000);
+await seite.evaluate(() => { window.__standVerzug = 0; });
+t('HS2 bleibt nach der Wiederherstellung entfernt',
+  !!(await db()).buchungen[oS].HS2, false);
+
+console.log('\nZurückgestellte Zeile bleibt im lokalen Bestand — die Korrektur kommt an');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HV1;Bestätigt;Vera;05.10.2027;06.10.2027;100,00;150,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleV = (await db()).buchungen;
+const oV = Object.keys(alleV).filter(o => alleV[o].HV1)[0];
+t('150 gespeichert', alleV[oV].HV1.gastbetrag, 150);
+await seite.fill('.paid-in[data-key="HV1"]', 'abc');
+await seite.waitForTimeout(2200);
+t('Datenbank behält 150', (await db()).buchungen[oV].HV1.gastbetrag, 150);
+// Der eigentliche Befund: vorher ersetzte docs den lokalen Bestand, die
+// zurückgestellte Zeile war damit weg — die nächste Rechnung kannte sie nicht
+// mehr, schrieb nichts und meldete trotzdem „gespeichert“.
+t('Zeile steht weiter in der Tabelle',
+  await seite.$$eval('.paid-in[data-key="HV1"]', n => n.length), 1);
+await seite.fill('.paid-in[data-key="HV1"]', '200,00');
+await seite.waitForTimeout(2400);
+t('die Korrektur auf 200 kommt an', (await db()).buchungen[oV].HV1.gastbetrag, 200);
+
+console.log('\nÄlterer Schreibvorgang bestätigt keine neuere Eingabe');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HT1;Bestätigt;Tina;05.11.2027;06.11.2027;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleT = (await db()).buchungen;
+const oT = Object.keys(alleT).filter(o => alleT[o].HT1)[0];
+await seite.evaluate(() => { window.__schreibVerzug = 2000; });
+await seite.fill('.paid-in[data-key="HT1"]', '150,00');
+await seite.waitForTimeout(1400);                     // Auftrag für 150 läuft
+await seite.fill('.paid-in[data-key="HT1"]', '200,00');
+await seite.waitForTimeout(2200);                     // 150 ist durch, 200 nicht
+t('Ungespeichert-Marker bleibt für die neuere Eingabe an',
+  await seite.$eval('#dlPaid', n => n.classList.contains('offen')), true);
+t('und der Status meldet sie als offen',
+  /noch offen/.test(await seite.textContent('#wolkeStand')), true);
+await seite.waitForTimeout(3000);
+await seite.evaluate(() => { window.__schreibVerzug = 0; });
+t('danach steht 200 in der Datenbank', (await db()).buchungen[oT].HT1.gastbetrag, 200);
+t('und der Marker ist aus',
+  await seite.$eval('#dlPaid', n => n.classList.contains('offen')), false);
+
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
 console.log('\n' + gut + ' bestanden · ' + schlecht + ' fehlgeschlagen');

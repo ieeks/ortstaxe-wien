@@ -188,6 +188,7 @@ function render(res, opt){
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
         +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +(sperren?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
@@ -256,7 +257,10 @@ function optionen(){
           konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
           // Rohtext durchreichen: compute() prueft ihn selbst und kann so
           // einen unlesbaren Eintrag melden statt ihn still als 0 zu lesen.
-          paid:paidRaw};
+          // Abzug statt Verweis: ein festgehaltener Auftrag muss mit den
+          // Werten rechnen, die beim Festhalten galten — sonst sieht er noch
+          // die Tastendrücke, die nach ihm kamen.
+          paid:Object.assign(Object.create(null), paidRaw)};
 }
 
 function aktuelleZeilen(){
@@ -294,6 +298,7 @@ function load(f){
   r.onload=()=>{
     lastText=r.result;
     wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
+    neuerBestand();             // wartende Aufträge gehören zum alten Bestand
     run();
     if(daten && konto && objektId) speichereImport(f.name, r.result);
   };
@@ -417,10 +422,38 @@ function inReihe(fn){
   schreibKette = naechste.catch(()=>{});
   return naechste;
 }
-/* Solange ein Objektwechsel lädt, gehören Anzeige und Eingaben noch zum alten
-   Objekt. Speichern ist in dieser Zwischenphase gesperrt — sonst landet der
-   Bestand von Wohnung A unter der bereits umgestellten Ziel-ID von B. */
-let laedt = false;
+/* Die Kette legt nur die Reihenfolge fest. Woran ein Auftrag hängt — an
+   welchem Objekt, an welchem Bestand, an welchem Bearbeitungsstand — muss
+   getrennt festgehalten werden. Die vier Befunde der fünften Nachprüfung sind
+   Varianten desselben Lochs: ein treu ausgeführter Auftrag, der längst zu
+   etwas anderem gehört.
+
+   Bestandsversion: steigt, sobald der Bestand als Ganzes ausgetauscht wird —
+   Objektwechsel, Laden, Import, Wiederherstellung, neue Datei. Ein Auftrag,
+   der aus einem älteren Bestand gerechnet wurde, wird verworfen statt
+   ausgeführt. */
+let bestandVersion=0;
+function neuerBestand(){ return ++bestandVersion; }
+
+/* Bearbeitungsstand: steigt bei jeder Eingabe. Ein Schreibabschluss darf nur
+   den Stand bestätigen, den er wirklich geschrieben hat. Sonst meldete der
+   Abschluss eines älteren Auftrags „gespeichert“ für eine Eingabe, die noch
+   aussteht, und löschte ihren Rohwert gleich mit. */
+let eingabeStand=0;
+
+/* Solange ein Vorgang den sichtbaren Bestand austauscht — Laden oder
+   Wiederherstellen —, gehören Anzeige und Eingaben noch zum alten Stand.
+   Gezählt, weil sich Vorgänge verschachteln: die Wiederherstellung lädt am
+   Ende selbst. Die Felder werden dabei wirklich gesperrt; sie nur zu
+   ignorieren ließe den Tastendruck stillschweigend im nächsten Auftrag
+   landen. */
+let sperren=0;
+function sperreAn(){ sperren++; zeigeSperre(); }
+function sperreAus(){ if(sperren>0) sperren--; zeigeSperre(); }
+function zeigeSperre(){
+  document.body.classList.toggle('gesperrt', sperren>0);
+  document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0; });
+}
 const $=id=>document.getElementById(id);
 
 function stand(text, offen){
@@ -466,13 +499,15 @@ function leereAnzeige(){
 let ladeNr=0;
 async function ladeBestand(){
   const meine=++ladeNr, ziel=objektId;
-  laedt=true;
+  sperreAn();
   stand('lädt …');
   let docs;
+  // finally, damit die Sperre auch bei einem Fehler genau einmal fällt —
+  // gezählt wird, ein vergessenes Herunterzählen sperrte die Felder dauerhaft.
   try{ docs=await daten.ladeBuchungen(ziel); }
-  catch(ex){ if(meine===ladeNr) laedt=false; throw ex; }
+  finally{ sperreAus(); }
   if(meine!==ladeNr || ziel!==objektId) return;      // überholt oder veraltet
-  laedt=false;
+  neuerBestand();
   wolkeBestand = docs.length ? docs : null;
   // Ohne Bestand und ohne geladene Datei gibt es nichts anzuzeigen — sonst
   // bliebe die Tabelle des vorherigen Objekts stehen. Verbergen genügt nicht:
@@ -517,15 +552,21 @@ function uebernimmEinstellungen(e){
 /* Nach einem CSV-Import: Schnappschuss, zusammenführen, schreiben. Der
    Schnappschuss kommt zuerst — sonst schützt er nicht vor genau dem Import,
    der ihn nötig macht. */
-function speichereImport(dateiname, text){ return inReihe(()=>importieren(dateiname, text)); }
-async function importieren(dateiname, text){
-  // Objekt zu Beginn festhalten. Zwischen den await-Punkten kann der
-  // Objektwähler umgestellt worden sein — dann landeten die Buchungen von
-  // Wohnung A unter Wohnung B.
-  const ziel=objektId;
+function speichereImport(dateiname, text){
+  // Ziel, Optionen und Bestandsversion JETZT festhalten, nicht erst wenn die
+  // Kette den Auftrag freigibt. Las importieren() sie beim Ausführen, war ein
+  // inzwischen erfolgter Objektwechsel unsichtbar: die Prüfungen dort
+  // verglichen objektId mit sich selbst und konnten gar nicht auslösen — der
+  // wartende Import landete unter dem neuen Objekt.
+  const ziel=objektId, opt=optionen(), version=bestandVersion;
+  return inReihe(()=>importieren(ziel, opt, version, dateiname, text));
+}
+async function importieren(ziel, opt, version, dateiname, text){
+  // Überholt heißt: anderes Objekt oder anderer Bestand als beim Einreihen.
+  const ueberholt=()=>ziel!==objektId || version!==bestandVersion;
+  if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
   try{
     stand('speichert …');
-    const opt=optionen();
     const res=compute(parseCSV(text),opt);
 
     // Stornierte Zeilen gehören mitgespeichert: sonst erfährt der Bestand nie,
@@ -542,7 +583,7 @@ async function importieren(dateiname, text){
                   .map(b=>alsBuchungsdokument(b, ziel));
 
     const gespeichert=await daten.ladeBuchungen(ziel);
-    if(ziel!==objektId) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
     if(gespeichert.length){
       // Der Schnappschuss gehört mit den Einstellungen gesichert, unter denen
       // dieser Bestand entstanden ist — nicht mit den gerade eingestellten.
@@ -552,13 +593,16 @@ async function importieren(dateiname, text){
         {grund:'import', datei:dateiname, hash:textHash(text)});
     }
     const vm=verschmelzeBuchungen(gespeichert, neu);
-    if(ziel!==objektId) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
     await daten.schreibeBuchungen(ziel, vm.schreiben);
     await daten.speichereEinstellungen(opt);
-    if(ziel!==objektId) return;              // Anzeige gehört jetzt dem anderen Objekt
+    if(ueberholt()) return;                  // Anzeige gehört jetzt einem anderen Stand
     // Ab hier ist die Datenbank die Quelle; paidRaw hat seinen Zweck erfüllt.
     // Bliebe es stehen, verdeckte es beim nächsten Import die neuen Dateiwerte.
     for(const k in paidRaw) delete paidRaw[k];
+    // Der Bestand ist ausgetauscht: ein noch wartender Eingabe-Auftrag rechnete
+    // aus dem Stand von vor dem Import und schriebe die Dateiwerte wieder weg.
+    neuerBestand();
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
     ungespeichert=false;
     run();
@@ -590,13 +634,17 @@ async function importieren(dateiname, text){
    anzeigte. Entprellt, weil bei jedem Tastendruck gefeuert wird. */
 let tippUhr=null;
 function speichereEingabe(){
-  if(!(daten && konto && objektId) || !wolkeBestand || laedt) return;
+  if(!(daten && konto && objektId) || !wolkeBestand || sperren) return;
   stand('nicht gespeichert', true);
   clearTimeout(tippUhr);
   // Ziel UND Daten jetzt festhalten, nicht erst wenn der Timer abläuft. Sonst
   // wird nach einem Objektwechsel der Bestand von Wohnung A unter Wohnung B
   // geschrieben: die Daten stammen noch aus A, die Ziel-ID schon aus B.
-  const ziel=objektId, opt=optionen();
+  // Dazu die Bestandsversion und der eigene Bearbeitungsstand: der eine sagt,
+  // aus welchem Bestand gerechnet wurde, der andere, welche Eingabe dieser
+  // Auftrag bestätigen darf.
+  const ziel=objektId, opt=optionen(), version=bestandVersion;
+  const meinStand=++eingabeStand, vorher=wolkeBestand;
   let alle, docs, offen;
   try{
     alle=compute(aktuelleZeilen(),opt).bookings;
@@ -611,19 +659,34 @@ function speichereEingabe(){
              .map(b=>alsBuchungsdokument(b, ziel));
   }catch(ex){ return stand('Nicht gespeichert: '+ex.message, true); }
   tippUhr=setTimeout(()=>inReihe(async()=>{
-    if(ziel!==objektId) return;            // inzwischen gewechselt — verwerfen
+    // Anderes Objekt oder anderer Bestand als beim Auslösen — verwerfen.
+    if(ziel!==objektId || version!==bestandVersion) return;
     try{
       await daten.schreibeBuchungen(ziel, docs);
       await daten.speichereEinstellungen(opt);
-      if(ziel!==objektId) return;
-      wolkeBestand=docs;
-      // Nach dem Speichern ist die Datenbank die Quelle. Bliebe die
-      // Überschreibung in paidRaw stehen, verdrängte sie beim nächsten Import
-      // einen korrigierten Dateiwert, noch bevor er gespeichert wird.
-      if(!offen.length) for(const k in paidRaw) delete paidRaw[k];
+      if(ziel!==objektId || version!==bestandVersion) return;
+      // Nur die geschriebenen Dokumente in den Bestand übernehmen, den Rest
+      // stehen lassen. Vorher ersetzte docs den ganzen Bestand — eine wegen
+      // unlesbarer Eingabe zurückgestellte Zeile fiel damit lokal weg, und die
+      // nächste Rechnung kannte sie nicht mehr: die Korrektur ging ins Leere
+      // und wurde trotzdem als „gespeichert“ gemeldet.
+      const nach=Object.create(null);
+      docs.forEach(d=>{ nach[d.code]=d; });
+      const basis=wolkeBestand||vorher;
+      wolkeBestand=basis.map(d=>nach[d.code]||d);
       if(offen.length){
         stand(offen.length+' Eingabe'+(offen.length===1?'':'n')+' unlesbar — nicht gespeichert', true);
+      }else if(meinStand!==eingabeStand){
+        // Seit dem Auslösen wurde weitergetippt. Dieser Auftrag hat den
+        // neueren Stand nicht geschrieben und darf ihn weder bestätigen noch
+        // seinen Rohwert löschen — sonst steht „gespeichert“ über einer
+        // Änderung, die beim Schließen verloren ginge.
+        stand('gespeichert — neuere Eingabe noch offen', true);
       }else{
+        // Nach dem Speichern ist die Datenbank die Quelle. Bliebe die
+        // Überschreibung in paidRaw stehen, verdrängte sie beim nächsten Import
+        // einen korrigierten Dateiwert, noch bevor er gespeichert wird.
+        for(const k in paidRaw) delete paidRaw[k];
         // Der Punkt auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim
         // Schließen bedeuten „steht nur im Arbeitsspeicher“. Sobald die
         // Datenbank den Wert hat, stimmt das nicht mehr.
@@ -645,6 +708,7 @@ $('abmelden').onclick=async()=>{
 };
 $('objekt').onchange=async()=>{
   clearTimeout(tippUhr);                   // ausstehende Speicherung gehört zum alten Objekt
+  neuerBestand();                          // und ein schon gestarteter Auftrag auch
   // Alles Objektgebundene sofort räumen — vor dem ersten await. Bliebe der
   // Bestand stehen, wäre die Tabelle des alten Objekts weiter bearbeitbar,
   // während objektId schon auf das neue zeigt; das Autospeichern schriebe
@@ -684,6 +748,14 @@ $('standZurueck').onclick=async()=>{
   // der Wiederherstellung ab, schriebe es die alten Daten wieder hinein und
   // machte sie damit rückgängig.
   clearTimeout(tippUhr); tippUhr=null;
+  // Und für die Dauer des Vorgangs keine neuen zulassen. Abwarten allein
+  // genügte nicht: die Tabelle blieb bearbeitbar, während die
+  // Wiederherstellung lief, und ein Tastendruck erzeugte aus dem alten
+  // Bestand einen Auftrag, der sich brav dahinter einreihte — und sie damit
+  // rückgängig machte. Vor dem ersten await sperren, sonst bleibt genau
+  // dazwischen ein Fenster offen.
+  sperreAn();
+  try{
   // Ein bereits gestarteter Schreibauftrag lässt sich nicht mehr abbrechen —
   // er wird abgewartet. Sonst schriebe er nach der Wiederherstellung den alten
   // Stand zurück und machte sie rückgängig.
@@ -708,6 +780,9 @@ $('standZurueck').onclick=async()=>{
     // Buchungen und Einstellungen in einem Vorgang: sonst stehen nach einem
     // Fehler die zurückgespielten Buchungen neben den alten Einstellungen.
     const erg=await daten.ersetzeBuchungen(ziel, zurueck, zuviel, alt.einstellungen||null);
+    // Der Bestand ist ein anderer: alles, was aus dem verworfenen Stand
+    // gerechnet wurde, ist ab hier ungültig.
+    neuerBestand();
     if(alt.einstellungen) uebernimmEinstellungen(alt.einstellungen);
     if(ziel!==objektId) return;
     // Getipptes aus der Sitzung würde den zurückgespielten Stand sofort wieder
@@ -725,6 +800,7 @@ $('standZurueck').onclick=async()=>{
     $('paidInfo').classList.remove('hide');
   }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
   });
+  } finally { sperreAus(); }
 };
 $('objektNeu').onclick=async()=>{
   const name=prompt('Name des neuen Objekts:');
