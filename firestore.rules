@@ -23,6 +23,16 @@ service cloud.firestore {
       return wert is string && wert.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
+    /* Auf ein Feld zuzugreifen, das es nicht gibt, ist in Rules ein Fehler und
+       verweigert die Anfrage. Optionale Felder deshalb immer erst mit `in`
+       prüfen — sonst scheitert eine Teilaktualisierung an der Prüfung selbst. */
+    function optionalText(d, feld) {
+      return !(feld in d) || d[feld] == null || d[feld] is string;
+    }
+    function optionaleZahl(d, feld) {
+      return !(feld in d) || d[feld] == null || d[feld] is number;
+    }
+
     /* Eine Buchung ist der gespeicherte Rohdatensatz. Alles Gerechnete —
        Nächte, Sätze, Bemessungsgrundlage, Ortstaxe — wird im Client aus
        diesen Feldern hergeleitet und darf hier gar nicht erst ankommen. */
@@ -32,11 +42,12 @@ service cloud.firestore {
           && d.schemaVersion >= 1 && d.schemaVersion <= 1
           && d.code is string && d.code == code
           && d.name is string && d.name.size() <= 200
-          && d.status is string && d.status.size() <= 100
           && istTag(d.von) && istTag(d.bis) && d.von <= d.bis
           && d.auszahlung is number
-          && (d.gastbetrag == null || d.gastbetrag is number)
-          && (d.objektId == null || d.objektId is string);
+          && optionalText(d, 'status')
+          && optionalText(d, 'objektId')
+          && optionalText(d, 'gastbetragQuelle')
+          && optionaleZahl(d, 'gastbetrag');
     }
 
     match /users/{uid} {
