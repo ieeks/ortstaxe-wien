@@ -270,7 +270,11 @@ function run(){
     err.classList.add('hide');
     const opt=optionen();
     const res=compute(aktuelleZeilen(),opt);
-    merkeGastbetraege(res.bookings, paidRaw);
+    // Nur im CSV-Betrieb merken. Liegt der Bestand aus der Datenbank vor, ist
+    // er bereits der Speicher — die Werte zusätzlich in paidRaw zu halten
+    // ließe sie jede später geladene Datei verdecken: eine korrigierte CSV
+    // mit 150 € kam dann nie durch, weil die gemerkten 120 € Vorrang hatten.
+    if(!wolkeBestand) merkeGastbetraege(res.bookings, paidRaw);
     render(res,opt);
   }catch(e){
     err.textContent=e.message; err.classList.remove('hide');
@@ -429,11 +433,34 @@ function fuelleObjekte(){
 
 /* Der gespeicherte Bestand wird zur Rechengrundlage. Ist nichts gespeichert,
    bleibt es beim CSV-Weg — wolkeBestand null heißt genau das. */
+/* Alles anzeigebare leeren und ausblenden. */
+function leereAnzeige(){
+  ['months','pays','rows','years'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.innerHTML='';
+  });
+  ['quota','warnings','printMeta'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.innerHTML='';
+  });
+  document.getElementById('out').classList.add('hide');
+}
+
+/* Jede Ladeanfrage bekommt eine Nummer. Antwortet eine ältere Anfrage später
+   als eine neuere — oder gehört sie zu einem inzwischen gewechselten Objekt —
+   wird sie verworfen. Ohne das zeigte der Wähler B, während der Bestand aus A
+   stammte; die nächste Eingabe hätte A unter B gespeichert. */
+let ladeNr=0;
 async function ladeBestand(){
+  const meine=++ladeNr, ziel=objektId;
   stand('lädt …');
-  const docs=await daten.ladeBuchungen(objektId);
+  const docs=await daten.ladeBuchungen(ziel);
+  if(meine!==ladeNr || ziel!==objektId) return;      // überholt oder veraltet
   wolkeBestand = docs.length ? docs : null;
-  run();
+  // Ohne Bestand und ohne geladene Datei gibt es nichts anzuzeigen — sonst
+  // bliebe die Tabelle des vorherigen Objekts stehen. Verbergen genügt nicht:
+  // die Zeilen blieben im DOM und wären zurück, sobald etwas #out wieder
+  // einblendet, ohne neu zu rendern.
+  if(!wolkeBestand && !lastText) leereAnzeige();
+  else run();
   stand(docs.length ? docs.length+' Buchungen aus der Datenbank' : 'noch nichts gespeichert');
   fuelleStaende();
 }
@@ -507,7 +534,11 @@ async function speichereImport(dateiname, text){
     await daten.schreibeBuchungen(ziel, vm.schreiben);
     await daten.speichereEinstellungen(opt);
     if(ziel!==objektId) return;              // Anzeige gehört jetzt dem anderen Objekt
+    // Ab hier ist die Datenbank die Quelle; paidRaw hat seinen Zweck erfüllt.
+    // Bliebe es stehen, verdeckte es beim nächsten Import die neuen Dateiwerte.
+    for(const k in paidRaw) delete paidRaw[k];
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
+    ungespeichert=false;
     run();
 
     const info=$('paidInfo'), teile=[];
@@ -557,6 +588,11 @@ function speichereEingabe(){
       await daten.speichereEinstellungen(opt);
       if(ziel!==objektId) return;
       wolkeBestand=docs;
+      // Der Punkt auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim
+      // Schließen bedeuten „steht nur im Arbeitsspeicher“. Sobald die Datenbank
+      // den Wert hat, stimmt das nicht mehr — sonst warnt der Browser vor
+      // Datenverlust, der keiner ist, und der Punkt wird bedeutungslos.
+      ungespeichert=false; markiereSpeicherstand();
       stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
       fuelleStaende();
     }catch(ex){ stand('Nicht gespeichert: '+ex.message, true); }
@@ -573,6 +609,10 @@ $('abmelden').onclick=async()=>{
 };
 $('objekt').onchange=async()=>{
   clearTimeout(tippUhr);                   // ausstehende Speicherung gehört zum alten Objekt
+  // Auch die geladene CSV gehört zum bisherigen Objekt. Bliebe sie liegen,
+  // zeigte ein leeres zweites Objekt die Buchungen des ersten.
+  lastText=null;
+  for(const k in paidRaw) delete paidRaw[k];
   objektId=$('objekt').value;
   await ladeBestand();
 };
@@ -601,23 +641,28 @@ $('standZurueck').onclick=async()=>{
   if(!z) return stand('Zuerst einen Stand auswählen.', true);
   const ziel=objektId;
   if(!confirm('Diesen Stand zurückspielen? Der aktuelle Bestand wird vorher gesichert.')) return;
+  // Ein ausstehendes Autospeichern gehört zum verworfenen Stand. Liefe es nach
+  // der Wiederherstellung ab, schriebe es die alten Daten wieder hinein und
+  // machte sie damit rückgängig.
+  clearTimeout(tippUhr); tippUhr=null;
   try{
     stand('spielt zurück …');
     const jetzt=await daten.ladeBuchungen(ziel);
+    if(ziel!==objektId) return stand('Objekt gewechselt — nichts zurückgespielt.', true);
     if(jetzt.length)
       await daten.legeSchnappschussAn(ziel, jetzt, await daten.ladeEinstellungen()||optionen(),
         {grund:'wiederherstellung', datei:null, hash:null});
     const alt=await daten.ladeSchnappschuss(ziel, z);
     const zurueck=alt.buchungen||[];
     // Zurückspielen heißt Bestandsabgleich, nicht Überschreiben: Buchungen, die
-    // erst nach dem Schnappschuss dazugekommen sind, müssen weg. Sonst lässt
-    // sich ein fehlerhafter Import zusätzlicher Zeilen nicht rückgängig machen —
-    // schreibeBuchungen mischt nur und löscht nie.
+    // erst nach dem Schnappschuss dazukamen, müssen weg. Löschen und Schreiben
+    // laufen als ein Vorgang — sonst bleibt bei einem Schreibfehler ein
+    // Mischbestand zurück, aus dem schon gelöscht, aber noch nichts
+    // wiederhergestellt wurde.
     const behalten=Object.create(null);
     zurueck.forEach(d=>{ behalten[d.code]=1; });
-    const zuviel=jetzt.filter(d=>!behalten[d.code]);
-    for(const d of zuviel) await daten.loescheBuchung(ziel, d.code);
-    await daten.schreibeBuchungen(ziel, zurueck);
+    const zuviel=jetzt.filter(d=>!behalten[d.code]).map(d=>d.code);
+    const erg=await daten.ersetzeBuchungen(ziel, zurueck, zuviel);
     if(alt.einstellungen) { await daten.speichereEinstellungen(alt.einstellungen);
                             uebernimmEinstellungen(alt.einstellungen); }
     if(ziel!==objektId) return;
@@ -629,8 +674,10 @@ $('standZurueck').onclick=async()=>{
     $('paidInfo').textContent='Stand vom '+z.slice(0,16)+' zurückgespielt · '
       +zurueck.length+' Buchung'+(zurueck.length===1?'':'en')
       +(zuviel.length?' · '+zuviel.length+' später hinzugekommene entfernt ('
-        +zuviel.map(d=>d.code).slice(0,5).join(', ')+')':'')
-      +' · der vorherige Bestand wurde gesichert';
+        +zuviel.slice(0,5).join(', ')+')':'')
+      +' · der vorherige Bestand wurde gesichert'
+      +(erg&&erg.atomar===false?' · Achtung: der Bestand war zu groß für einen '
+        +'unteilbaren Vorgang, bei einem Abbruch kann er unvollständig sein':'');
     $('paidInfo').classList.remove('hide');
   }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
 };
