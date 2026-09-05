@@ -2,6 +2,40 @@
    Wird von index.html nur bei Bedarf nachgeladen. Läuft als klassisches
    Script im selben Kontext und sieht daher alle Funktionen und Konstanten
    der Hauptdatei. Ohne diese Datei funktioniert das Tool vollständig. */
+import {
+  EFF,
+  fmt,
+  round2,
+  esc,
+  csvZelle,
+  csvZeile,
+  parseCSV,
+  findCol,
+  parseDate,
+  datumsOrdnung,
+  leseGeld,
+  parseMoney,
+  compute,
+  occupancy,
+  jahressummen,
+  leseGastbetraege,
+  merkeGastbetraege,
+  monatsSummen,
+  baueCsvMonate,
+  baueCsvBuchungen,
+  baueCsvGastbetraege,
+  SCHEMA_VERSION,
+  isoTag,
+  alsBuchungsdokument,
+  alsCsvZeilen,
+  textHash,
+  baueSchnappschuss,
+  verschmelzeBuchungen,
+  PAUSCHALE,
+  steuergrundlage,
+  csvText
+} from './js/kern.js';
+
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
    Funktionen, die auch die Meldung rechnen. Fälle mit „offen“ dokumentieren
@@ -382,6 +416,493 @@ if(location.search.indexOf('selftest')>=0){
   t('Robustheit','echte Dublette warnt',
     csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.09.2026;06.09.2026;;100')
       .warn.some(w=>/mehrfach/.test(w)), true);
+
+  /* CSV schreiben — Gegenstück zu parseCSV. Die Exportdatei ist der Speicher
+     für die Gastbeträge; zerreißt sie an einem Sonderzeichen, ist der Stand
+     weg. Geprüft wird deshalb der ganze Weg Export → Import. */
+  t('CSV schreiben','Zelle ohne Sonderzeichen bleibt roh', csvZelle('Anna'), 'Anna');
+  t('CSV schreiben','Semikolon wird gequotet', csvZelle('Anna;Muster'), '"Anna;Muster"');
+  t('CSV schreiben','Anführungszeichen werden verdoppelt', csvZelle('Anna "M"'), '"Anna ""M"""');
+  t('CSV schreiben','Zeilenumbruch wird gequotet', csvZelle('a\nb'), '"a\nb"');
+  t('CSV schreiben','leere Zelle bleibt leer', csvZelle(''), '');
+  t('CSV schreiben','null wird zur leeren Zelle', csvZelle(null), '');
+  t('CSV schreiben','Zeile fügt mit Semikolon zusammen', csvZeile(['a','b;c']), 'a;"b;c"');
+
+  /* Export → Import: Anzahl, Code, Name und Gastbetrag müssen identisch
+     zurückkommen. Vor dem Fix ergab ein Semikolon im Namen 0 Buchungen. */
+  const RT='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Einkünfte;Vom Gast bezahlt';
+  /* Bewusst über die echte Exportfunktion, nicht über csvZeile direkt: sonst
+     bliebe der Test grün, wenn render() am Serializer vorbei exportiert. */
+  /* Testeigenes Quoting: die Eingabe darf nicht von der Funktion abhängen,
+     die hier geprüft wird — sonst faellt bei einem Serializer-Fehler auch das
+     Fixture aus und der Test bricht ab statt rot zu werden. */
+  const qz=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const rundlauf=name=>{
+    const hin=compute(parseCSV(RT+'\n'+[qz('HM1'),qz(name),qz('05.08.2026'),qz('07.08.2026'),qz('100,00'),qz('120,00')].join(';')),BASE);
+    return {hin:hin, zurueck:compute(parseCSV(baueCsvGastbetraege(hin)),BASE)};
+  };
+  /* Defensiv: schlaegt der Serializer fehl, sollen die Faelle rot werden und
+     nicht den ganzen Testlauf mit einer Exception abbrechen. */
+  ['Anna;Muster','Anna "Muster"','a\nb','Müller, Anna'].forEach(n=>{
+    const {hin,zurueck}=rundlauf(n), a=hin.bookings[0], b=zurueck.bookings[0];
+    t('CSV schreiben','Rundlauf behält die Buchung: '+JSON.stringify(n), zurueck.bookings.length, 1);
+    t('CSV schreiben','Rundlauf behält den Code: '+JSON.stringify(n), b?b.code:null, 'HM1');
+    t('CSV schreiben','Rundlauf behält den Namen: '+JSON.stringify(n), b?b.name:null, n);
+    t('CSV schreiben','Rundlauf behält den Gastbetrag: '+JSON.stringify(n), b?b.paid:null, 120);
+    t('CSV schreiben','Rundlauf behält die Ortstaxe: '+JSON.stringify(n),
+      b?round2(b.tax):null, a?round2(a.tax):NaN);
+  });
+  /* Auch die beiden menschenlesbaren Exporte müssen quoten */
+  const sonder=compute(parseCSV(RT+'\n'+[qz('HM1'),qz('A;B'),qz('05.08.2026'),qz('07.08.2026'),qz('100,00'),qz('')].join(';')),BASE);
+  const zB=parseCSV(baueCsvBuchungen(sonder)), zM=parseCSV(baueCsvMonate(sonder,'601005590'));
+  t('CSV schreiben','Buchungsexport quotet den Namen',
+    baueCsvBuchungen(sonder).split('\n')[1].indexOf('"A;B"')>=0, true);
+  t('CSV schreiben','Buchungsexport bleibt spaltentreu', zB[1]?zB[1].length:0, zB[0].length);
+  t('CSV schreiben','Monatsexport bleibt spaltentreu', zM[1]?zM[1].length:0, zM[0].length);
+
+  /* Identität — ein gemerkter Gastbetrag darf nur an einem echten
+     Bestätigungs-Code hängen. Ohne Code bekommt die Zeile einen flüchtigen
+     Schlüssel mit „#“, den load() vor jeder neuen Datei verwirft. */
+  const OHNE='Status;Name des Gastes;Startdatum;Enddatum;Einkünfte';
+  const ohneCode=compute(parseCSV(OHNE+'\n;Anna;05.08.2026;07.08.2026;100'),BASE);
+  t('Identität','Zeile ohne Code bekommt Anzeige-Label', ohneCode.bookings[0].code, 'Zeile 2');
+  t('Identität','Zeile ohne Code bekommt flüchtigen Schlüssel', ohneCode.bookings[0].key, '#zeile2');
+  t('Identität','Zeile ohne Code ist nicht stabil', ohneCode.bookings[0].stabil, false);
+  t('Identität','fehlender Code warnt',
+    ohneCode.warn.some(w=>/Bestaetigungs-Code/.test(w)), true);
+  t('Identität','Zeile mit Code ist stabil',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].stabil, true);
+  t('Identität','Zeile mit Code nutzt den Code als Schlüssel',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].key, 'HM1');
+  /* Ein flüchtiger Schlüssel greift innerhalb derselben Datei — das ist gewollt */
+  t('Identität','flüchtiger Schlüssel wirkt in derselben Datei',
+    compute(parseCSV(OHNE+'\n;Anna;05.08.2026;07.08.2026;100'),
+      Object.assign({},BASE,{paid:{'#zeile2':200}})).bookings[0].paid, 200);
+  /* merkeGastbetraege darf codelose Zeilen nicht ins Gedächtnis nehmen */
+  const ged=Object.create(null);
+  merkeGastbetraege([{key:'#zeile2',stabil:false,paid:150},{key:'HM1',stabil:true,paid:150}], ged);
+  t('Identität','codelose Zeile wird nicht gemerkt', ged['#zeile2'], undefined);
+  t('Identität','Zeile mit Code wird gemerkt', ged['HM1'], '150,00');
+  /* Der Purge aus load(): „#“-Schlüssel überleben keinen Dateiwechsel */
+  const nachLoad=Object.create(null); nachLoad['#zeile2']='200,00'; nachLoad['HM1']='200,00';
+  for(const k in nachLoad) if(k.charAt(0)==='#') delete nachLoad[k];
+  t('Identität','flüchtiger Schlüssel überlebt load() nicht', nachLoad['#zeile2'], undefined);
+  t('Identität','echter Code überlebt load()', nachLoad['HM1'], '200,00');
+
+  /* Geldbeträge streng lesen (F01). Der frühere Parser strich alles
+     Nicht-Numerische weg und machte aus '100abc200' die Zahl 100200. */
+  const geld=(s,feld)=>leseGeld(s)[feld||'wert'];
+  t('Geld','deutsches Format', geld('1.644,80'), 1644.8);
+  t('Geld','englisches Format', geld('1,644.80'), 1644.8);
+  t('Geld','ohne Trenner', geld('100'), 100);
+  t('Geld','zwei Tausendergruppen', geld('1.234.567,89'), 1234567.89);
+  t('Geld','Währungszeichen und Leerzeichen', geld('€ 1.644,80'), 1644.8);
+  t('Geld','Klammern sind negativ', geld('(100,00)'), -100);
+  t('Geld','Minuszeichen', geld('-50,00'), -50);
+  t('Geld','leere Zelle meldet leer', geld('', 'status'), 'leer');
+  t('Geld','Buchstaben im Betrag sind ungültig', geld('100abc200','status'), 'ungueltig');
+  t('Geld','Buchstaben ergeben keinen Wert', geld('100abc200'), 0);
+  t('Geld','mehrere Dezimalzeichen sind ungültig', geld('1,2,3','status'), 'ungueltig');
+  t('Geld','fremde Währung ist ungültig', geld('USD 100.00','status'), 'ungueltig');
+  t('Geld','doppeltes Vorzeichen ist ungültig', geld('--5','status'), 'ungueltig');
+  t('Geld','1.234 ist mehrdeutig', geld('1.234','status'), 'mehrdeutig');
+  t('Geld','1,234 ist mehrdeutig', geld('1,234','status'), 'mehrdeutig');
+  t('Geld','1.23456 ist eindeutig', geld('1.23456','status'), 'ok');
+  t('Geld','unlesbarer Betrag warnt',
+    csv('T;;G;05.08.2026;06.08.2026;;100abc200').warn.some(w=>/kein lesbarer Geldwert/.test(w)), true);
+  t('Geld','mehrdeutiger Betrag warnt',
+    csv('T;;G;05.08.2026;06.08.2026;;1.234').warn.some(w=>/mehrdeutig/.test(w)), true);
+  t('Geld','sauberer Betrag warnt nicht',
+    csv('T;;G;05.08.2026;06.08.2026;;1.644,80').warn.length, 0);
+  t('Geld','unlesbarer Gastbetrag warnt',
+    compute(parseCSV(HEAD+';Vom Gast bezahlt\nT;;G;05.08.2026;06.08.2026;;100;xyz'),BASE)
+      .warn.some(w=>/Vom Gast bezahlt/.test(w)), true);
+
+  /* Gebühren validieren (F04). Wirksame 100 % ergaben Infinity und die
+     Tabelle zeigte stumm „∞“ — die min/max der Felder prüft niemand nach. */
+  const wirft=o=>{ try{ compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;100'),
+                                Object.assign({},BASE,o)); return false; }catch(e){ return true; } };
+  t('Gebühren','wirksame 100 % werden abgelehnt', wirft({fee:100}), true);
+  t('Gebühren','über 100 % werden abgelehnt', wirft({fee:120}), true);
+  t('Gebühren','negative Gebühr wird abgelehnt', wirft({fee:-5}), true);
+  t('Gebühren','unlesbare Gebühr wird abgelehnt', wirft({fee:NaN}), true);
+  t('Gebühren','99,9 % bleiben zulässig', wirft({fee:99.9}), false);
+  t('Gebühren','Gastgebühr 100 % wird abgelehnt', wirft({gastfee:100}), true);
+  t('Gebühren','negative Gastgebühr wird abgelehnt', wirft({gastfee:-1}), true);
+  t('Gebühren','Ergebnis bleibt endlich', Number.isFinite(
+    compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;100'),
+            Object.assign({},BASE,{fee:99.9})).bookings[0].tax), true);
+
+  /* Einnahmen-Export erkennen (F05) — vorher nur auf Deutsch */
+  const ablehnung=kopf=>{ try{ compute(parseCSV(kopf+'\nx;HM1;G;05.08.2026;06.08.2026;100;90;R1'),BASE);
+                               return false; }catch(e){ return /Einnahmen-Export/.test(e.message); } };
+  t('Einnahmen-Export','deutscher Transaktionsexport wird abgelehnt',
+    ablehnung('Typ;Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Bruttoeinkünfte;Ausgezahlt;Referenzcode'), true);
+  t('Einnahmen-Export','englischer Transaktionsexport wird abgelehnt',
+    ablehnung('Type;Confirmation code;Guest name;Start date;End date;Gross earnings;Paid out;Reference code'), true);
+  t('Einnahmen-Export','Reservierung mit Spalte „Inseratstyp“ läuft durch',
+    compute(parseCSV('Bestätigungs-Code;Status;Name des Gastes;Inseratstyp;Startdatum;Enddatum;Einkünfte'
+      +'\nT;;G;Wohnung;05.08.2026;06.08.2026;100'),BASE).bookings.length, 1);
+  t('Einnahmen-Export','findCol exakt ignoriert Teiltreffer',
+    findCol(['Inseratstyp'],['Typ','Type'],true), -1);
+  t('Einnahmen-Export','findCol ohne exakt trifft den Teilstring',
+    findCol(['Inseratstyp'],['Typ','Type']), 0);
+
+  /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
+  const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',
+                 'C;;G;01.10.2026;02.10.2026;;100');
+  const fuss=monatsSummen(abst.months).base;   // die echte Fußzeile, nicht nachgebaut
+  /* Verglichen wird auf Cent-Ebene: beide Seiten summieren bereits gerundete
+     Werte, die Float-Reste (285,71999…) sind in der Anzeige nicht sichtbar. */
+  t('Abstimmung','Monatszeilen zeigen je 95,24', abst.months.map(m=>fmt(m.base)).join('+'), '95,24+95,24+95,24');
+  t('Abstimmung','Fußzeile = Summe der angezeigten Monatszeilen', fmt(fuss), '285,72');
+  t('Abstimmung','Jahresgrundlage = Fußzeile', fmt(jahressummen(abst.months)[0].base), fmt(fuss));
+  t('Abstimmung','ein Meldemonat trägt genau einen Satz',
+    abst.months.length, new Set(abst.months.map(m=>m.month)).size);
+  t('Abstimmung','Fußzeile zählt alle Nächte', monatsSummen(abst.months).nights, 3);
+  t('Abstimmung','Fußzeilen-Ortstaxe = Summe der Monatsbeträge',
+    fmt(round2(monatsSummen(abst.months).tax)), fmt(round2(abst.months.reduce((s,m)=>s+round2(m.tax),0))));
+
+  /* Datumsformat (F14). 01/08/2026 ist der 1. August oder der 8. Januar — je
+     Zelle nicht entscheidbar. 01/08–03/08 ergab so 59 statt 2 Nächte. Die
+     Reihenfolge wird deshalb einmal für die ganze Datei bestimmt. */
+  const DH ='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Einkünfte';
+  const DHN='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte';
+  const dcsv=(kopf,...r)=>compute(parseCSV(kopf+'\n'+r.join('\n')),BASE);
+  const nStr=b=>b.bookings.map(x=>x.nights).join(',');
+
+  t('Datumsformat','ganze Datei mehrdeutig bleibt bei MM/TT',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100')), '59');
+  t('Datumsformat','ganze Datei mehrdeutig warnt',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100').warn.some(w=>/nicht eindeutig/.test(w)), true);
+  t('Datumsformat','ein Tag über 12 legt die Datei auf TT/MM fest',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100')), '2,2');
+  t('Datumsformat','TT/MM erkannt warnt nicht',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100').warn.length, 0);
+  t('Datumsformat','ein Monatswert über 12 legt die Datei auf MM/TT fest',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;08/13/2026;08/15/2026;100')), '59,2');
+  t('Datumsformat','Nächtespalte löst Mehrdeutigkeit zu TT/MM',
+    nStr(dcsv(DHN,'A;;G;01/08/2026;03/08/2026;2;100')), '2');
+  t('Datumsformat','Nächtespalte löst Mehrdeutigkeit zu MM/TT',
+    nStr(dcsv(DHN,'A;;G;01/08/2026;03/08/2026;59;100')), '59');
+  t('Datumsformat','durch Nächtespalte aufgelöst warnt nicht',
+    dcsv(DHN,'A;;G;01/08/2026;03/08/2026;2;100').warn.length, 0);
+  t('Datumsformat','widersprüchliche Reihenfolgen warnen',
+    dcsv(DH,'A;;G;13/08/2026;15/08/2026;100','B;;G;08/13/2026;08/15/2026;100')
+      .warn.some(w=>/beiden Reihenfolgen/.test(w)), true);
+  t('Datumsformat','deutsches Format bleibt unberührt',
+    nStr(dcsv(DH,'A;;G;01.08.2026;03.08.2026;100')), '2');
+  t('Datumsformat','deutsches Format warnt nicht',
+    dcsv(DH,'A;;G;01.08.2026;03.08.2026;100').warn.length, 0);
+  t('Datumsformat','ISO bleibt unberührt',
+    nStr(dcsv(DH,'A;;G;2026-08-01;2026-08-03;100')), '2');
+  /* Der Meldemonat ist die eigentliche Auswirkung, nicht nur die Nächtezahl */
+  t('Datumsformat','TT/MM landet im richtigen Meldemonat',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100')
+      .months.map(m=>m.month).join(','), '2026-08');
+
+  /* datumsOrdnung einzeln */
+  const ordn=(kopf,...r)=>{ const rows=parseCSV(kopf+'\n'+r.join('\n'));
+    return datumsOrdnung(rows,{start:3,end:4,nights:kopf===DHN?5:-1}); };
+  t('Datumsformat','ohne Schrägstriche kein Befund', ordn(DH,'A;;G;01.08.2026;03.08.2026;100').slash, 0);
+  t('Datumsformat','Quelle „tag“ bei eindeutigem Tageswert',
+    ordn(DH,'A;;G;13/08/2026;15/08/2026;100').quelle, 'tag');
+  t('Datumsformat','Quelle „naechte“ wenn die Spalte entscheidet',
+    ordn(DHN,'A;;G;01/08/2026;03/08/2026;2;100').quelle, 'naechte');
+  t('Datumsformat','Widerspruch wird als solcher gemeldet',
+    ordn(DH,'A;;G;13/08/2026;15/08/2026;100','B;;G;08/13/2026;08/15/2026;100').widerspruch, true);
+
+  /* ISO mit angehängtem Müll darf nicht als gültiges Datum durchgehen */
+  t('Datumsformat','ISO mit Text dahinter wird abgelehnt', isNaN(parseDate('2026-08-01xyz')), true);
+  t('Datumsformat','ISO mit Uhrzeit bleibt gültig', parseDate('2026-08-01T12:30:00'), parseDate('2026-08-01'));
+  t('Datumsformat','ISO mit Zeitzone bleibt gültig', parseDate('2026-08-01T00:00:00+02:00'), parseDate('2026-08-01'));
+
+  /* Datenmodell für die Synchronisierung. Der entscheidende Nachweis ist der
+     Rundlauf: CSV → rechnen → Dokumente → zurück → rechnen muss dieselben
+     Zahlen ergeben. Sonst wäre der gespeicherte Stand nicht der gerechnete. */
+  const MH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const mcsv=(...r)=>compute(parseCSV(MH+'\n'+r.join('\n')),BASE);
+  const hin=mcsv('HM1;Bestätigt;Anna;18.06.2026;19.07.2026;;1644,80;',
+                 'HM2;Bestätigt;Bernd;01.08.2026;03.08.2026;;100,00;150,00',
+                 'HM3;Bestätigt;Cem;01.01.2026;02.04.2026;;2000,00;');
+  const docs=hin.bookings.map(b=>alsBuchungsdokument(b,'obj1'));
+  const zurueck=compute(alsCsvZeilen(docs),BASE);
+
+  t('Datenmodell','Rundlauf behält alle Buchungen', zurueck.bookings.length, hin.bookings.length);
+  t('Datenmodell','Rundlauf behält die Meldemonate',
+    zurueck.months.map(m=>m.month+':'+m.nights).join('|'), hin.months.map(m=>m.month+':'+m.nights).join('|'));
+  t('Datenmodell','Rundlauf behält die Ortstaxe je Monat',
+    zurueck.months.map(m=>fmt(round2(m.tax))).join('|'), hin.months.map(m=>fmt(round2(m.tax))).join('|'));
+  t('Datenmodell','Rundlauf behält die Jahressumme',
+    fmt(jahressummen(zurueck.months)[0].tax), fmt(jahressummen(hin.months)[0].tax));
+  /* Zugriff über den Code, nicht über die Position: alsCsvZeilen sortiert
+     nach Anreisedatum, damit der Bestand aus der Datenbank immer gleich
+     herauskommt, egal in welcher Reihenfolge die Dokumente ankommen. */
+  const nach=(r,c)=>r.bookings.filter(b=>b.code===c)[0];
+  t('Datenmodell','Rundlauf behält den Gastbetrag', nach(zurueck,'HM2').paid, 150);
+  ['HM1','HM2','HM3'].forEach(c=>{
+    t('Datenmodell','Rundlauf behält die Befreiung: '+c, nach(zurueck,c).exempt, nach(hin,c).exempt);
+    t('Datenmodell','Rundlauf behält die Ortstaxe: '+c,
+      fmt(round2(nach(zurueck,c).tax)), fmt(round2(nach(hin,c).tax)));
+  });
+  t('Datenmodell','Rundlauf behält den Referenzfall 64,58 €',
+    fmt(round2(nach(zurueck,'HM1').tax)), '64,58');
+  t('Datenmodell','Dokumente kommen sortiert zurück',
+    zurueck.bookings.map(b=>b.code).join(','), 'HM3,HM1,HM2');
+
+  /* Das Dokument selbst */
+  const d0=docs[0];
+  t('Datenmodell','Dokument trägt die Schemaversion', d0.schemaVersion, SCHEMA_VERSION);
+  t('Datenmodell','Dokument trägt das Objekt', d0.objektId, 'obj1');
+  t('Datenmodell','Datum als ISO-Zeichenkette, nicht als Timestamp', d0.von, '2026-06-18');
+  t('Datenmodell','Dokument speichert die Auszahlung roh', d0.auszahlung, 1644.8);
+  t('Datenmodell','ohne Gastbetrag steht null', d0.gastbetrag, null);
+  t('Datenmodell','mit Gastbetrag steht die Herkunft', docs[1].gastbetragQuelle, 'datei');
+  t('Datenmodell','kein gerechneter Wert im Dokument',
+    ['nights','tax','base','amt','parts','segs'].some(k=>k in d0), false);
+  t('Datenmodell','ISO-Tag ist zeitzonenfest', isoTag(Date.UTC(2026,0,1)), '2026-01-01');
+
+  /* Schnappschuss */
+  const schn=baueSchnappschuss(docs,{basis:'net',fee:3},{grund:'import',datei:'a.csv',hash:textHash('x')});
+  t('Schnappschuss','enthält alle Buchungen', schn.buchungen.length, 3);
+  t('Schnappschuss','merkt sich die Anzahl', schn.anzahl, 3);
+  t('Schnappschuss','merkt sich die Einstellungen', schn.einstellungen.fee, 3);
+  t('Schnappschuss','merkt sich Dateiname und Grund', schn.datei+'/'+schn.grund, 'a.csv/import');
+  t('Schnappschuss','trägt die Schemaversion', schn.schemaVersion, SCHEMA_VERSION);
+  t('Schnappschuss','ist aus einem Schnappschuss wieder rechenbar',
+    fmt(round2(compute(alsCsvZeilen(schn.buchungen),BASE).months[0].tax)),
+    fmt(round2(hin.months[0].tax)));
+
+  /* Dateikennung */
+  t('Hash','gleicher Text, gleiche Kennung', textHash('abc'), textHash('abc'));
+  t('Hash','anderer Text, andere Kennung', textHash('abc')===textHash('abd'), false);
+  t('Hash','acht Stellen', textHash('abc').length, 8);
+  t('Hash','leerer Text ergibt eine Kennung', textHash('').length, 8);
+
+  /* Zusammenführen beim Import. Die wichtigste Eigenschaft: ein Export über
+     einen einzelnen Monat darf den Rest des Jahres nicht löschen. */
+  const dok=(code,gastbetrag,quelle,von)=>{
+    const v=von||'2026-08-01';
+    const bis=v.slice(0,8)+('0'+(+v.slice(8,10)+2)).slice(-2);   // zwei Nächte
+    return {code:code, schemaVersion:SCHEMA_VERSION, name:'G', status:'Bestätigt',
+      von:v, bis:bis, auszahlung:100,
+      gastbetrag:gastbetrag===undefined?null:gastbetrag,
+      gastbetragQuelle:quelle||null, objektId:'obj1'};
+  };
+
+  const vm1=verschmelzeBuchungen([dok('A'),dok('B'),dok('C')],[dok('B')]);
+  t('Zusammenführen','Teilimport löscht nichts', vm1.unberuehrt.map(d=>d.code).join(','), 'A,C');
+  t('Zusammenführen','Teilimport schreibt nur die enthaltene Buchung',
+    vm1.schreiben.map(d=>d.code).join(','), 'B');
+  t('Zusammenführen','neue Buchung wird übernommen',
+    verschmelzeBuchungen([dok('A')],[dok('B')]).schreiben.map(d=>d.code).join(','), 'B');
+  t('Zusammenführen','leerer Bestand nimmt alles',
+    verschmelzeBuchungen([],[dok('A'),dok('B')]).schreiben.length, 2);
+  t('Zusammenführen','leerer Import lässt alles unberührt',
+    verschmelzeBuchungen([dok('A')],[]).unberuehrt.length, 1);
+
+  /* Gastbeträge: der Import weiß oft nichts davon, weil die Spalte im rohen
+     Airbnb-Export gar nicht vorkommt. Dann darf er nichts wegnehmen. */
+  const vm2=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A')]);
+  t('Zusammenführen','Import ohne Gastbetrag behält den gespeicherten',
+    vm2.schreiben[0].gastbetrag, 150);
+  t('Zusammenführen','und behält dessen Herkunft', vm2.schreiben[0].gastbetragQuelle, 'manuell');
+  t('Zusammenführen','das ist kein Konflikt', vm2.konflikte.length, 0);
+
+  const vm3=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A',120,'datei')]);
+  t('Zusammenführen','abweichender Wert über einen manuellen meldet Konflikt', vm3.konflikte.length, 1);
+  t('Zusammenführen','Konflikt nennt alten und neuen Wert',
+    vm3.konflikte[0].alt+'→'+vm3.konflikte[0].neu, '150→120');
+  t('Zusammenführen','der Import gewinnt trotzdem', vm3.schreiben[0].gastbetrag, 120);
+
+  const vm4=verschmelzeBuchungen([dok('A',150,'datei')],[dok('A',120,'datei')]);
+  t('Zusammenführen','Datei über Datei ist kein Konflikt', vm4.konflikte.length, 0);
+  const vm5=verschmelzeBuchungen([dok('A',150,'manuell')],[dok('A',150,'datei')]);
+  t('Zusammenführen','gleicher Wert ist kein Konflikt', vm5.konflikte.length, 0);
+
+  /* Geänderte Stammdaten schlagen durch */
+  const vm6=verschmelzeBuchungen([dok('A',null,null,'2026-08-01')],[dok('A',null,null,'2026-09-01')]);
+  t('Zusammenführen','geändertes Anreisedatum wird übernommen', vm6.schreiben[0].von, '2026-09-01');
+
+  /* Und der zusammengeführte Bestand muss wieder rechenbar sein */
+  const vmAll=verschmelzeBuchungen([dok('A',null,null,'2026-08-01')],[dok('B',null,null,'2026-09-01')]);
+  const bestand=vmAll.unberuehrt.concat(vmAll.schreiben);
+  t('Zusammenführen','zusammengeführter Bestand rechnet',
+    compute(alsCsvZeilen(bestand),BASE).bookings.length, 2);
+
+  /* Dubletten (F08). Vorher warnte das Tool zwar, rechnete aber beide Zeilen —
+     aus 4,76 € wurden 9,52 €. */
+  const dup=csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.08.2026;06.08.2026;;100');
+  t('Dubletten','identische Zeile wird nur einmal gerechnet', dup.bookings.length, 1);
+  t('Dubletten','und nur einmal besteuert',
+    fmt(round2(dup.months.reduce((s,m)=>s+round2(m.tax),0))), '4,76');
+  t('Dubletten','identische Dublette wird gemeldet',
+    dup.warn.some(w=>/identischen Daten/.test(w)), true);
+
+  const dupA=csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.09.2026;07.09.2026;;200');
+  t('Dubletten','abweichende Dublette wird nur einmal gerechnet', dupA.bookings.length, 1);
+  t('Dubletten','gerechnet wird die erste Zeile', dupA.bookings[0].nights, 1);
+  t('Dubletten','Widerspruch wird als solcher benannt',
+    dupA.warn.some(w=>/abweichenden Daten/.test(w)), true);
+  t('Dubletten','die Warnung nennt beide Beträge',
+    dupA.warn.some(w=>/100,00/.test(w)&&/200,00/.test(w)), true);
+  t('Dubletten','verschiedene Codes bleiben zwei Buchungen',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100','HM2;;G;05.08.2026;06.08.2026;;100').bookings.length, 2);
+  t('Dubletten','dreifach vorhanden ergibt trotzdem eine Buchung',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.08.2026;06.08.2026;;100',
+        'HM1;;G;05.08.2026;06.08.2026;;100').bookings.length, 1);
+
+  /* Herkunft des Betrags (F10). Ein gefülltes, aber verworfenes Feld sah in der
+     Tabelle aus wie ein Beleg — gerechnet wurde mit dem Pauschalsatz. */
+  const PH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const pcsv=(zeile,o)=>compute(parseCSV(PH+'\n'+zeile),Object.assign({},BASE,o||{}));
+  t('Betragsherkunft','brauchbarer Gastbetrag gilt als Beleg',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;150').bookings[0].betragQuelle, 'beleg');
+  t('Betragsherkunft','zu kleiner Gastbetrag ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;50', {gastfee:14}).bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','leeres Feld ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;').bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','unlesbarer Wert ist eine Schätzung',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;xyz').bookings[0].betragQuelle, 'geschaetzt');
+  t('Betragsherkunft','der verworfene Wert bleibt trotzdem sichtbar',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;50', {gastfee:14}).bookings[0].paid, 50);
+  t('Betragsherkunft','ein Beleg wird nicht als geschätzt gemeldet',
+    pcsv('T;;G;05.08.2026;06.08.2026;;100;150', {gastfee:14}).warn.some(w=>/pauschal/.test(w)), false);
+
+  /* Pauschalabzug (F13). Bis 30.06.2026 steckt der 11-%-Abzug im effektiven
+     Satz — die geführte Grundlage ist für diesen Zeitraum das Entgelt davor. */
+  t('Pauschalabzug','bis Juni 2026 gilt 89 %', PAUSCHALE.r32, 0.89);
+  t('Pauschalabzug','ab Juli 2026 kein Abzug mehr', PAUSCHALE.r50, 1);
+  t('Pauschalabzug','ab Juli 2027 ebenfalls nicht', PAUSCHALE.r80, 1);
+  const juni=buchung('01.06.2026','02.06.2026',1000).months[0];
+  t('Pauschalabzug','Juni: geführtes Entgelt', fmt(juni.base), '972,31');
+  t('Pauschalabzug','Juni: Grundlage nach Abzug',
+    fmt(round2(steuergrundlage(juni.base,juni.reg))), '865,35');
+  /* Der eigentliche Nachweis: Grundlage nach Abzug mal gesetzlicher Satz
+     ergibt die Steuer. Vorher passte 972,31 x 3,2 % = 31,11 nicht zu 27,69. */
+  t('Pauschalabzug','Juni: Grundlage × 3,2 % = Ortstaxe',
+    fmt(round2(steuergrundlage(juni.base,juni.reg)*0.032)), fmt(round2(juni.tax)));
+  const juli=buchung('01.07.2026','02.07.2026',1000).months[0];
+  t('Pauschalabzug','Juli: Grundlage bleibt das Entgelt',
+    fmt(round2(steuergrundlage(juli.base,juli.reg))), fmt(juli.base));
+  t('Pauschalabzug','Juli: Grundlage × 5 % = Ortstaxe',
+    fmt(round2(steuergrundlage(juli.base,juli.reg)*0.05)), fmt(round2(juli.tax)));
+
+  /* Formelauswertung in Tabellenprogrammen (F16) */
+  t('CSV schreiben','Gleichheitszeichen wird entschärft', csvText('=1+1'), "'=1+1");
+  t('CSV schreiben','Plus wird entschärft', csvText('+1'), "'+1");
+  t('CSV schreiben','At-Zeichen wird entschärft', csvText('@SUM(A1)'), "'@SUM(A1)");
+  t('CSV schreiben','Minus wird entschärft', csvText('-1+1'), "'-1+1");
+  t('CSV schreiben','harmloser Name bleibt unberührt', csvText('Anna Muster'), 'Anna Muster');
+  t('CSV schreiben','leerer Wert bleibt leer', csvText(''), '');
+  const gefahr=compute(parseCSV(HEAD+'\nT;;=1+1;05.08.2026;06.08.2026;;-100'),BASE);
+  t('CSV schreiben','Buchungsexport entschärft den Gastnamen',
+    baueCsvBuchungen(gefahr).split('\n')[1].indexOf("'=1+1")>=0, true);
+  /* Zahlen dürfen dabei nicht mitgeschützt werden: -100 beginnt ebenfalls mit
+     einem gefährlichen Zeichen und wäre als "'-100,00" unbrauchbar. */
+  t('CSV schreiben','negativer Betrag bleibt eine Zahl',
+    baueCsvBuchungen(gefahr).split('\n')[1].indexOf("'-")<0, true);
+  t('CSV schreiben','Gastbeträge-Datei bleibt unverändert einlesbar',
+    compute(parseCSV(baueCsvGastbetraege(gefahr)),BASE).bookings[0].name, '=1+1');
+
+  /* Nachprüfung des Branch-Reviews vom 05.09.2026 (Befunde 1–8 dort). */
+
+  /* Befund 2: eine stornierte Zeile muss den Bestand erreichen, sonst bleibt
+     eine früher gespeicherte bestätigte Buchung steuerpflichtig stehen. */
+  const stor=csv('HM1;Storniert;G;05.08.2026;06.08.2026;;100');
+  t('Nachprüfung','Storno zählt nicht in der Meldung', stor.bookings.length, 0);
+  t('Nachprüfung','Storno wird aber zurückgegeben', stor.storniert.length, 1);
+  /* Defensiv: fällt die Storno-Liste weg, sollen die Fälle rot werden und
+     nicht den ganzen Lauf mit einer Exception abbrechen. */
+  t('Nachprüfung','mit Code und Status',
+    stor.storniert[0] ? stor.storniert[0].code+'/'+stor.storniert[0].status : null, 'HM1/Storniert');
+  t('Nachprüfung','englischer Status ebenso',
+    csv('HM1;Cancelled;G;05.08.2026;06.08.2026;;100').storniert.length, 1);
+  t('Nachprüfung','bestätigte Buchung landet nicht in storniert',
+    csv('HM1;Bestätigt;G;05.08.2026;06.08.2026;;100').storniert.length, 0);
+  /* Und der Weg über die Datenbank: alt bestätigt, neu storniert → steuerfrei */
+  const altD=csv('HM1;Bestätigt;G;05.08.2026;06.08.2026;;100').bookings.map(b=>alsBuchungsdokument(b,'o1'));
+  const neuD=stor.storniert.map(b=>alsBuchungsdokument(b,'o1'));
+  const vmS=verschmelzeBuchungen(altD,neuD);
+  const nachher=compute(alsCsvZeilen(vmS.unberuehrt.concat(vmS.schreiben)),BASE);
+  t('Nachprüfung','nach dem Storno-Import keine Buchung mehr', nachher.bookings.length, 0);
+  t('Nachprüfung','und keine Ortstaxe', nachher.months.length, 0);
+
+  /* Befund 4: ein unlesbarer Betrag ist als solcher erkennbar, damit er einen
+     gespeicherten richtigen Wert nicht mit 0 überschreibt. */
+  t('Nachprüfung','unlesbarer Betrag ist am Status erkennbar',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100abc200').bookings[0].betragStatus, 'ungueltig');
+  t('Nachprüfung','sauberer Betrag ebenso',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].betragStatus, 'ok');
+  t('Nachprüfung','mehrdeutiger Betrag ebenso',
+    csv('HM1;;G;05.08.2026;06.08.2026;;1.234').bookings[0].betragStatus, 'mehrdeutig');
+
+  /* Befund 5: das flüchtige Anzeigelabel darf nicht als echter Code exportiert
+     werden — sonst wird es beim Wiedereinlesen zu einer stabilen Identität. */
+  const ohneC=compute(parseCSV('Status;Name des Gastes;Startdatum;Enddatum;Einkünfte'
+    +'\n;Anna;05.08.2026;06.08.2026;100'),BASE);
+  t('Nachprüfung','intern flüchtiger Schlüssel', ohneC.bookings[0].stabil, false);
+  t('Nachprüfung','Codespalte im Export bleibt leer',
+    baueCsvGastbetraege(ohneC).split('\n')[1].split(';')[0], '');
+  t('Nachprüfung','nach Wiedereinlesen weiterhin flüchtig',
+    compute(parseCSV(baueCsvGastbetraege(ohneC)),BASE).bookings[0].stabil, false);
+  t('Nachprüfung','Buchung mit Code wird normal exportiert',
+    baueCsvGastbetraege(csv('HM1;;G;05.08.2026;06.08.2026;;100')).split('\n')[1].split(';')[0], 'HM1');
+
+  /* Befund 6: die Herkunft muss im echten Pfad entstehen, nicht nur im Test. */
+  const PH2='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  t('Nachprüfung','Wert aus der Datei ist Herkunft „datei“',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),BASE).bookings[0].gastbetragQuelle, 'datei');
+  t('Nachprüfung','eingetippter Wert ist Herkunft „manuell“',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;'),
+            Object.assign({},BASE,{paid:{HM1:'150,00'}})).bookings[0].gastbetragQuelle, 'manuell');
+  t('Nachprüfung','die Herkunft landet auch im Dokument',
+    alsBuchungsdokument(compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;'),
+      Object.assign({},BASE,{paid:{HM1:'150,00'}})).bookings[0],'o1').gastbetragQuelle, 'manuell');
+  t('Nachprüfung','abweichender Wert aus der Datei wird gemeldet',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),
+            Object.assign({},BASE,{paid:{HM1:'120,00'}})).warn.some(w=>/Datei nennt/.test(w)), true);
+  t('Nachprüfung','gleicher Wert meldet nichts',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),
+            Object.assign({},BASE,{paid:{HM1:'150,00'}})).warn.some(w=>/Datei nennt/.test(w)), false);
+
+  /* Befund 7: auch Exporte und Jahrestabelle trennen Entgelt und Grundlage. */
+  const jj=jahressummen(buchung('01.06.2026','02.06.2026',1000).months);
+  t('Nachprüfung','Jahrestabelle führt das Entgelt', fmt(jj[0].base), '972,31');
+  t('Nachprüfung','Jahrestabelle führt die Grundlage', fmt(jj[0].grundlage), '865,35');
+  t('Nachprüfung','Grundlage × 3,2 % = Jahressteuer', fmt(round2(jj[0].grundlage*0.032)), fmt(jj[0].tax));
+  const mk=parseCSV(baueCsvMonate(buchung('01.06.2026','02.06.2026',1000),'601005590'));
+  t('Nachprüfung','Monatsexport nennt beide Spalten',
+    mk[0].indexOf('Entgelt_ohne_USt_Taxe')>=0 && mk[0].indexOf('Grundlage_nach_Pauschale')>=0, true);
+  t('Nachprüfung','Monatsexport trägt beide Werte', mk[1][3]+'/'+mk[1][4], '972,31/865,35');
+  const bk=parseCSV(baueCsvBuchungen(buchung('01.06.2026','02.06.2026',1000)));
+  t('Nachprüfung','Buchungsexport bleibt spaltentreu', bk[1].length, bk[0].length);
+
+  /* Zweite Nachprüfung, Befund 4: „manuell“ heißt, ein Mensch hat etwas
+     anderes gesetzt als die Quelle sagt — nicht bloß „kam aus der Eingabe“.
+     merkeGastbetraege schreibt die Dateiwerte selbst nach paidRaw; ohne den
+     Vergleich wären danach alle Werte „manuell“. */
+  const QH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const qh=(zeile,p)=>compute(parseCSV(QH+'\n'+zeile),Object.assign({},BASE,{paid:p||{}}));
+  const Z='HM1;;G;05.08.2026;06.08.2026;;100;150';
+  t('Herkunft','ohne Eingabe ist die Quelle die Datei', qh(Z).bookings[0].gastbetragQuelle, 'datei');
+  t('Herkunft','gleicher Wert in der Eingabe bleibt „datei“',
+    qh(Z,{HM1:'150,00'}).bookings[0].gastbetragQuelle, 'datei');
+  t('Herkunft','abweichender Wert ist „manuell“',
+    qh(Z,{HM1:'120,00'}).bookings[0].gastbetragQuelle, 'manuell');
+  t('Herkunft','Eingabe ohne Dateiwert ist „manuell“',
+    qh('HM1;;G;05.08.2026;06.08.2026;;100;',{HM1:'120,00'}).bookings[0].gastbetragQuelle, 'manuell');
+  /* Und der Kern von Befund 4: keine Überschreibung heißt, der Dateiwert gilt.
+     Vorher blieb ein geleertes Feld als '' liegen, behielt Vorrang und die
+     Rechnung fiel auf die Schätzung zurück — während die Warnung zum Leeren riet. */
+  t('Herkunft','ohne Überschreibung gilt der Dateiwert', qh(Z).bookings[0].paid, 150);
+  t('Herkunft','und er gilt als Beleg', qh(Z).bookings[0].betragQuelle, 'beleg');
+  t('Herkunft','gleicher Wert meldet keinen Konflikt',
+    qh(Z,{HM1:'150,00'}).warn.some(w=>/die Datei nennt/.test(w)), false);
+  t('Herkunft','abweichender Wert meldet einen Konflikt',
+    qh(Z,{HM1:'120,00'}).warn.some(w=>/die Datei nennt/.test(w)), true);
+  t('Herkunft','die Warnung rät nur noch zum Leeren, nicht zum Neuladen',
+    qh(Z,{HM1:'120,00'}).warn.some(w=>/neu laden/.test(w)), false);
 
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};

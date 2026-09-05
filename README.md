@@ -6,8 +6,14 @@ von Buchungen über den Monatswechsel und dem 90-Tage-Zähler der Bauordnung.
 
 **→ https://manuel.tools/ortstaxe-wien/**
 
-Eine einzige HTML-Datei, kein Build, keine Abhängigkeiten außer den Google Fonts.
-Die CSV wird ausschließlich im Browser verarbeitet und nirgendwo hochgeladen.
+Kein Build-Schritt, keine Bundler, kein Framework — native ES-Module, so
+ausgeliefert wie sie im Repo liegen. Die CSV wird ausschließlich im Browser
+verarbeitet und nirgendwo hochgeladen.
+
+    index.html            Markup und CSS
+    js/kern.js            Rechenkern — reine Funktionen, kein DOM
+    js/oberflaeche.js     alles mit document
+    selftest.js           die Prüfungen, nur bei ?selftest geladen
 
 ## Benutzung
 
@@ -36,11 +42,12 @@ die Befreiung geltend macht, hat die maßgeblichen Umstände nachzuweisen.
 
 ## Selbsttest
 
-`index.html?selftest` rechnet 67 Prüfungen gegen dieselben Funktionen, die auch die
-Meldung erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem
-amtlichen Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der
-Monatsenden nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter und CSV-Parsing.
-Kein Build-Schritt, keine zweite Datei.
+`index.html?selftest` rechnet gegen dieselben Funktionen aus `js/kern.js`, die auch die Meldung
+erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem amtlichen
+Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der Monatsenden
+nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter, Betragsprüfung, Gebührengrenzen,
+CSV-Parsing und den Rundlauf Export → Import. Die Anzahl der Prüfungen nennt die
+Seite selbst; sie wird hier bewusst nicht doppelt gepflegt. Kein Build-Schritt.
 
 Vor jeder Änderung an der Rechnung einmal aufrufen; **„0 fehlgeschlagen“ ist die
 Bedingung zum Commit.** Ein Testfall kann als bekannter, noch nicht behobener Bug
@@ -85,8 +92,8 @@ Regel nicht dazu.
 
 Meldung und Zahlung sind jeweils am 15. des Folgemonats fällig (§ 13 Abs. 1 WTFG),
 Verwendungszweck ist Abgabenkontonummer + MMJJJJ des Aufenthaltsmonats. Dazu kommt bis
-zum 15. Februar die elektronische Abgabenerklärung für das Vorjahr — die deckt das Tool
-noch nicht ab.
+zum 15. Februar die elektronische Abgabenerklärung für das Vorjahr — die Jahressummen
+dafür weist das Tool unter der Monatstabelle aus.
 
 ### Geprüftes Beispiel
 
