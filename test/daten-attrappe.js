@@ -21,7 +21,10 @@ export async function ladeBuchungen(objektId){
   if(v) await new Promise(r=>setTimeout(r,v));
   return Object.values(db.buchungen[objektId]||{});
 }
+/* Schreibverzögerung einspeisbar: window.__schreibVerzug = 800 lässt einen
+   begonnenen Schreibvorgang erst später abschließen. */
 export async function schreibeBuchungen(objektId,docs){
+  if(window.__schreibVerzug) await new Promise(r=>setTimeout(r,window.__schreibVerzug));
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
   db.schreibvorgaenge++;
@@ -29,13 +32,14 @@ export async function schreibeBuchungen(objektId,docs){
 }
 /* Wie im echten daten.js: ganz oder gar nicht. Mit __fehlerBeimSchreiben
    lässt sich ein Schreibfehler gezielt einspeisen. */
-export async function ersetzeBuchungen(objektId,docs,zuLoeschen){
+export async function ersetzeBuchungen(objektId,docs,zuLoeschen,einstellungen){
   if(window.__fehlerBeimSchreiben) throw new Error('simulierter Schreibfehler');
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   zuLoeschen.forEach(c=>{ delete db.buchungen[objektId][c]; });
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
+  if(einstellungen){ db.einstellungen=Object.assign({},einstellungen); delete db.einstellungen.paid; }
   db.schreibvorgaenge++;
-  return {atomar:true, anzahl:docs.length+zuLoeschen.length};
+  return {atomar:true, anzahl:docs.length+zuLoeschen.length+(einstellungen?1:0)};
 }
 export async function loescheBuchung(objektId,code){ delete (db.buchungen[objektId]||{})[code]; }
 export async function legeSchnappschussAn(objektId,docs,e,h){

@@ -138,20 +138,26 @@ export async function schreibeBuchungen(objektId, dokumente){
    Wiederherstellung einen Mischbestand: das Löschen war schon durch, das
    Zurückschreiben nicht. Über 400 Vorgänge wird gestapelt statt atomar; das
    ist erst bei Beständen jenseits eines Jahres relevant und wird gemeldet. */
-export async function ersetzeBuchungen(objektId, dokumente, zuLoeschen){
+export async function ersetzeBuchungen(objektId, dokumente, zuLoeschen, einstellungen){
   await start();
   const {f} = teile;
   const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
-  const gesamt = dokumente.length + zuLoeschen.length;
+  const gesamt = dokumente.length + zuLoeschen.length + (einstellungen?1:0);
   if(gesamt<=400){
     const stapel = f.writeBatch(db);
     zuLoeschen.forEach(c => stapel.delete(f.doc(basis, String(c))));
     dokumente.forEach(d => stapel.set(f.doc(basis, String(d.code)), d));
+    // Die Einstellungen gehören in denselben Vorgang: sonst stehen nach einem
+    // Fehler die Buchungen des alten Standes neben den neuen Einstellungen.
+    if(einstellungen)
+      stapel.set(f.doc(db,'users',uid(),'einstellungen','aktuell'),
+                 Object.assign({schemaVersion:SCHEMA_VERSION}, einstellungen), {merge:true});
     await stapel.commit();
     return {atomar:true, anzahl:gesamt};
   }
   for(const c of zuLoeschen) await f.deleteDoc(f.doc(basis, String(c)));
   await schreibeBuchungen(objektId, dokumente);
+  if(einstellungen) await speichereEinstellungen(einstellungen);
   return {atomar:false, anzahl:gesamt};
 }
 

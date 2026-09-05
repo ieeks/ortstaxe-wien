@@ -187,6 +187,23 @@ Datenbank setzt beide zurück — sonst warnt der Browser vor einem Datenverlust
 den es nicht gibt, und der Punkt wird bedeutungslos. Ohne Anmeldung bleibt es
 beim alten Verhalten: erst der CSV-Export löscht ihn.
 
+**Alle Schreibvorgänge laufen durch eine Kette (`inReihe`).** `clearTimeout`
+stoppt nur einen wartenden Timer — hat sein Rückruf den Datenbankaufruf schon
+begonnen, läuft der weiter und schriebe nach einer Wiederherstellung den alten
+Stand zurück. Verkettet wartet die Wiederherstellung laufende Schreibvorgänge ab
+und ersetzt danach. Einzelne Timer-Fixes reichen hier nicht; die Reihenfolge
+gehört an einer Stelle festgelegt.
+
+**Ein Objektwechsel räumt vor dem ersten `await`**, nicht danach: Bestand, CSV,
+`paidRaw` und Anzeige. Solange geladen wird, ist Speichern gesperrt (`laedt`) —
+sonst ist die Tabelle des alten Objekts weiter bearbeitbar, während `objektId`
+schon auf das neue zeigt, und der Bestand von A landet unter B.
+
+**Der Status des Gastbetrags wird getrennt vom Status der Auszahlung geführt**
+(`gastbetragStatus` neben `betragStatus`). Eine unlesbare Eingabe darf einen
+gültigen gespeicherten Wert nicht mit `null` überschreiben: solche Zeilen werden
+nicht geschrieben, gemeldet, und der Ungespeichert-Marker bleibt an.
+
 **`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der
 Datenbank vor, ist er bereits der Speicher — die Werte zusätzlich in `paidRaw`
 zu halten ließe sie jede später geladene Datei verdecken, und eine korrigierte
