@@ -51,12 +51,37 @@ ES-Modulen besteht, braucht er einen Server — Browser blockieren Modul-Importe
 Bei jeder Änderung vorher und nachher aufrufen; die Anzeige nennt bestandene,
 fehlgeschlagene und bekannt offene Fälle.
 
+**Der Selbsttest allein reicht nicht.** Er prüft den Rechenkern; was zwischen
+Eingabe, Import und Speichern passiert, erreicht er nicht — und genau dort lagen
+die Fehler der Branch-Nachprüfung vom 05.09.2026: ein eingetippter Gastbetrag,
+der nie gespeichert wurde; eine Stornierung, die den Bestand nie erreichte; ein
+unlesbarer Betrag, der einen richtigen überschrieb. Alle drei waren mit grünem
+Selbsttest vorhanden.
+
+Dafür gibt es `test/integration.mjs`: kopiert das Repo, ersetzt `js/daten.js`
+durch `test/daten-attrappe.js`, liefert statisch aus und fährt die echte
+Oberfläche mit Chromium durch.
+
+    npm i playwright && node test/integration.mjs
+
+Playwright ist reines Entwicklungswerkzeug. **Ausgeliefert wird weiterhin ohne
+Build und ohne Abhängigkeiten** — die Regel oben gilt für das Werkzeug, nicht
+für die Testwerkbank.
+
+Wer eine Funktion an der Oberfläche ergänzt, ergänzt hier einen Fall. Ein Test,
+der seine Eingabe selbst konstruiert statt sie durch den echten Pfad laufen zu
+lassen, ist grün und wertlos: `gastbetragQuelle` war so einmal nur in den Tests
+vorhanden, während der Produktivpfad den Wert nie erzeugte.
+
 ## Aufbau
 
-    index.html            Markup und CSS, lädt js/oberflaeche.js als Modul
-    js/kern.js            Rechenkern — reine Funktionen, kein DOM
-    js/oberflaeche.js     alles mit document: render, Handler, Sitzungszustand
-    selftest.js           alle Prüfungen, per ?selftest nachgeladen
+    index.html              Markup und CSS, lädt js/oberflaeche.js als Modul
+    js/kern.js              Rechenkern — reine Funktionen, kein DOM
+    js/oberflaeche.js       alles mit document: render, Handler, Sitzungszustand
+    js/daten.js             Firestore, spricht als einzige Stelle mit Firebase
+    js/firebase-config.js   Projektdaten und gepinnte SDK-Version
+    selftest.js             Prüfungen des Rechenkerns, per ?selftest nachgeladen
+    test/integration.mjs    Oberfläche gegen eine Datenbank-Attrappe
 
 `js/kern.js`:
 

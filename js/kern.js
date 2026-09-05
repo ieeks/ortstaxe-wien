@@ -262,6 +262,11 @@ function compute(csvRows, opt){
   const USTF_SERVICE = 1.20;   // Airbnb verrechnet 20 % österreichische USt auf die Servicegebühr
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
   let pauschal=0, fluechtig=0;
+  /* Zeilen, die wegen ihres Status nicht in die Meldung gehören. Sie werden
+     zurückgegeben, damit ein Abgleich mit einem gespeicherten Bestand die
+     Stornierung mitbekommt — „fehlt in der Datei“ und „ausdrücklich storniert“
+     sind zwei verschiedene Dinge. */
+  const storniert=[];
 
   const bookings=[], months={}, warn=[], seen=Object.create(null);
   // Datumsformat einmal für die ganze Datei bestimmen, nicht je Zelle raten
@@ -299,11 +304,27 @@ function compute(csvRows, opt){
         +'mit drei folgenden Ziffern kann Tausender- oder Dezimaltrenner sein. Gerechnet wird mit '
         +fmt(gPay.wert)+' € — bitte gegen den Beleg prüfen.');
     const netPay=gPay.wert;
+    const betragStatus=gPay.status;   // 'leer' | 'ok' | 'mehrdeutig' | 'ungueltig'
     const basis=netPay*hostGross;
     // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
     // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
     const ov=opt.paid ? opt.paid[key] : undefined;
-    const gPaid=leseGeld(ov!==undefined ? ov : (ci.paid>=0 ? row[ci.paid] : ''));
+    const ausDatei = ci.paid>=0 ? row[ci.paid] : '';
+    const gPaid=leseGeld(ov!==undefined ? ov : ausDatei);
+    // Woher der Gastbetrag kommt. Ohne dieses Feld war der Konfliktzweig in
+    // verschmelzeBuchungen unerreichbar: alsBuchungsdokument setzte immer
+    // 'datei', und nur die Tests konstruierten 'manuell' von Hand.
+    const gastbetragQuelle = ov!==undefined ? 'manuell' : 'datei';
+    // Ein gemerkter Wert schlägt die Datei — das ist gewollt, darf aber nicht
+    // still geschehen, wenn beide etwas anderes sagen.
+    if(ov!==undefined && ausDatei){
+      const gDatei=leseGeld(ausDatei);
+      if(gDatei.status!=='leer' && gDatei.status!=='ungueltig'
+         && Math.abs(gDatei.wert-gPaid.wert)>0.005)
+        warn.push(code+' ('+name+') — die Datei nennt '+fmt(gDatei.wert)+' € als Gastbetrag, '
+          +'im Tool stehen '+fmt(gPaid.wert)+' €. Gerechnet wird mit dem Wert aus dem Tool. '
+          +'Zum Übernehmen des Dateiwerts das Feld leeren und die Datei neu laden.');
+    }
     if(gPaid.status==='ungueltig')
       warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ist kein lesbarer Geldwert. '
         +'Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
@@ -327,7 +348,14 @@ function compute(csvRows, opt){
     // Buchungen haben nie stattgefunden und gehören nicht in die Meldung.
     const st=status.trim();
     if(/storn|cancel|abgelehnt|declin|abgelaufen|expired|anfrage|inquir|ausstehend|pending|zeitüberschreitung|timed ?out/i.test(st)){
-      warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.'); continue;
+      warn.push(code+' ('+name+') übersprungen — Status „'+st+'“.');
+      // Nicht nur überspringen, sondern festhalten: sonst erfährt ein späterer
+      // Abgleich nie, dass diese Buchung storniert wurde, und ein früher
+      // gespeicherter bestätigter Stand bliebe steuerpflichtig stehen.
+      if(!isNaN(a) && !isNaN(b) && b>a)
+        storniert.push({code,key,stabil,name,status:st,a,b,netPay,paid:0,
+                        gastbetragQuelle:null,betragStatus});
+      continue;
     }
     // Der deutsche Export schreibt je nach Zeitpunkt „Aktueller Gast“, „Früherer
     // Gast“ oder „Gast bewerten – läuft bald ab“ — alles stattgefundene
@@ -387,7 +415,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
@@ -400,7 +428,7 @@ function compute(csvRows, opt){
       +opt.gastfee+' % Gast-Servicegebühr gerechnet — Airbnb staffelt diese Gebühr nach Dauer '
       +'und Preis, der Wert ist also geschätzt. Für eine exakte Meldung die Spalte '
       +'„Vom Gast bezahlt“ in die CSV aufnehmen.');
-  return {bookings,months:Object.values(months).sort((x,y)=>x.month.localeCompare(y.month)||x.reg.localeCompare(y.reg)),warn};
+  return {bookings,storniert,months:Object.values(months).sort((x,y)=>x.month.localeCompare(y.month)||x.reg.localeCompare(y.reg)),warn};
 }
 
 /* --- 90-Tage-Zähler (Bauordnung) --- */
@@ -437,17 +465,22 @@ function occupancy(bookings, mode, heute){
 function jahressummen(months){
   const proMonat={}, jahre={};
   months.forEach(m=>{
-    if(!proMonat[m.month]) proMonat[m.month]={base:0,tax:0,nights:0};
-    proMonat[m.month].base+=m.base; proMonat[m.month].tax+=m.tax;
+    if(!proMonat[m.month]) proMonat[m.month]={base:0,grundlage:0,tax:0,nights:0};
+    proMonat[m.month].base+=m.base;
+    // Der 11-%-Pauschalabzug gilt je Satz, nicht je Jahr — deshalb hier
+    // aufsummieren und nicht am Ende einmal anwenden.
+    proMonat[m.month].grundlage+=steuergrundlage(m.base,m.reg);
+    proMonat[m.month].tax+=m.tax;
     proMonat[m.month].nights+=m.nights;
   });
   Object.keys(proMonat).sort().forEach(k=>{
     const j=k.slice(0,4);
-    if(!jahre[j]) jahre[j]={jahr:+j, monate:0, nights:0, base:0, tax:0, von:k};
+    if(!jahre[j]) jahre[j]={jahr:+j, monate:0, nights:0, base:0, grundlage:0, tax:0, von:k};
     const e=jahre[j];
     e.monate++; e.nights+=proMonat[k].nights;
-    e.base+=round2(proMonat[k].base);
-    e.tax +=round2(proMonat[k].tax);
+    e.base     +=round2(proMonat[k].base);
+    e.grundlage+=round2(proMonat[k].grundlage);
+    e.tax      +=round2(proMonat[k].tax);
     if(k<e.von) e.von=k;
   });
   return Object.values(jahre).sort((a,b)=>a.jahr-b.jahr);
@@ -506,17 +539,21 @@ function monatsSummen(months){
 function csvDatum(t){ return new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}); }
 
 function baueCsvMonate(res, konto){
-  return 'Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
+  // Zwei getrennte Spalten statt einer irreführenden „Bemessungsgrundlage“:
+  // bis 30.06.2026 ist das Entgelt nicht die steuerpflichtige Grundlage.
+  return 'Meldemonat;Satz;Naechte;Entgelt_ohne_USt_Taxe;Grundlage_nach_Pauschale;Ortstaxe;Verwendungszweck\n'+
     res.months.map(m=>csvZeile([monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),
+      fmt(round2(steuergrundlage(m.base,m.reg))),
       fmt(round2(m.tax)),konto+m.month.split('-')[1]+m.month.split('-')[0]])).join('\n');
 }
 
 function baueCsvBuchungen(res){
-  return 'Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
+  return 'Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Entgelt_ohne_USt_Taxe;Grundlage_nach_Pauschale;Ortstaxe\n'+
     res.bookings.flatMap(b=>{
-      if(b.exempt) return [csvZeile([csvText(b.code),csvText(b.name),csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'])];
+      if(b.exempt) return [csvZeile([csvText(b.code),csvText(b.name),csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),'befreit','','','','','0,00'])];
       return b.parts.map(p=>csvZeile([csvText(b.code),csvText(b.name),csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),
-        monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))]));
+        monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),
+        fmt(round2(steuergrundlage(p.base,p.reg))),fmt(round2(p.tax))]));
     }).join('\n');
 }
 
@@ -525,7 +562,11 @@ function baueCsvBuchungen(res){
    rohen Airbnb-CSV hochgeladen und die Werte stehen wieder drin. */
 function baueCsvGastbetraege(res){
   return 'Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt\n'+
-    res.bookings.map(b=>csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,
+    // Ohne echten Bestätigungs-Code bleibt die Codespalte leer. Vorher stand
+    // dort das Anzeigelabel „Zeile 2“ — beim Wiedereinlesen wurde daraus ein
+    // scheinbar echter Code, und zwei verschiedene Dateien bekamen dieselbe
+    // Identität. Damit war F06 über den Exportweg wieder offen.
+    res.bookings.map(b=>csvZeile([b.stabil?b.code:'',b.name,csvDatum(b.a),csvDatum(b.b),b.nights,
       fmt(b.netPay),b.paid?fmt(b.paid):''])).join('\n');
 }
 

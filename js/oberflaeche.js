@@ -135,10 +135,12 @@ function render(res, opt){
 
   const jahre=jahressummen(res.months);
   let y='<tr><th>Kalenderjahr</th><th class="num">Meldemonate</th><th class="num">Nächte</th>'
-    +'<th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th><th>Erklärung fällig</th></tr>';
+    +'<th class="num">Entgelt ohne USt/Taxe</th><th class="num">Grundlage</th>'
+    +'<th class="num">Ortstaxe</th><th>Erklärung fällig</th></tr>';
   jahre.forEach(j=>{
     y+='<tr><td class="mono">'+j.jahr+'</td><td class="num">'+j.monate+'</td>'
       +'<td class="num">'+j.nights+'</td><td class="num">'+fmt(j.base)+'</td>'
+      +'<td class="num">'+fmt(j.grundlage)+'</td>'
       +'<td class="num"><strong>'+fmt(j.tax)+'</strong></td>'
       +'<td class="mono" style="font-size:12px">15.02.'+(j.jahr+1)+'</td></tr>';
   });
@@ -192,7 +194,7 @@ function render(res, opt){
   });
   rt.innerHTML=g;
   rt.querySelectorAll('.paid-in').forEach(el=>{
-    el.oninput=()=>{ paidRaw[el.dataset.key]=el.value; ungespeichert=true; run(); };
+    el.oninput=()=>{ paidRaw[el.dataset.key]=el.value; ungespeichert=true; run(); speichereEingabe(); };
   });
   if(hadFocus){
     const el=rt.querySelector('.paid-in[data-key="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
@@ -293,9 +295,10 @@ file.onchange=e=>{ if(e.target.files[0]) load(e.target.files[0]); };
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
 drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) load(f); });
-document.getElementById('basis').onchange=run;
-document.getElementById('zaehl').onchange=run;
-document.getElementById('uid').onchange=run;
+const laufUndSichern=()=>{ run(); speichereEingabe(); };
+document.getElementById('basis').onchange=laufUndSichern;
+document.getElementById('zaehl').onchange=laufUndSichern;
+document.getElementById('uid').onchange=laufUndSichern;
 document.getElementById('konto').oninput=run;
 
 (function(){
@@ -313,8 +316,8 @@ document.getElementById('konto').oninput=run;
   inp.onblur=()=>{ if(!inp.readOnly) lock(); };
   inp.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();lock();} if(e.key==='Escape'){inp.value=saved;lock();} };
 })();
-document.getElementById('fee').oninput=run;
-document.getElementById('gastfee').oninput=run;
+document.getElementById('fee').oninput=laufUndSichern;
+document.getElementById('gastfee').oninput=laufUndSichern;
 
 function toPDF(onlyMonths){
   document.body.classList.toggle('print-months',!!onlyMonths);
@@ -402,6 +405,7 @@ function zeichneLeiste(){
   $('wer').classList.toggle('hide', !an);
   $('objektWahl').classList.toggle('hide', !an);
   $('objektNeu').classList.toggle('hide', !an);
+  if(!an){ $('standWahl').classList.add('hide'); $('standZurueck').classList.add('hide'); }
   $('wer').textContent = an ? konto.name : '';
 }
 
@@ -419,6 +423,7 @@ async function ladeBestand(){
   wolkeBestand = docs.length ? docs : null;
   run();
   stand(docs.length ? docs.length+' Buchungen aus der Datenbank' : 'noch nichts gespeichert');
+  fuelleStaende();
 }
 
 async function nachAnmeldung(){
@@ -455,35 +460,88 @@ function uebernimmEinstellungen(e){
    Schnappschuss kommt zuerst — sonst schützt er nicht vor genau dem Import,
    der ihn nötig macht. */
 async function speichereImport(dateiname, text){
+  // Objekt zu Beginn festhalten. Zwischen den await-Punkten kann der
+  // Objektwähler umgestellt worden sein — dann landeten die Buchungen von
+  // Wohnung A unter Wohnung B.
+  const ziel=objektId;
   try{
     stand('speichert …');
     const opt=optionen();
     const res=compute(parseCSV(text),opt);
-    const neu=res.bookings.filter(b=>b.stabil).map(b=>alsBuchungsdokument(b,objektId));
-    const uebersprungen=res.bookings.length-neu.length;
-    const gespeichert=await daten.ladeBuchungen(objektId);
-    if(gespeichert.length)
-      await daten.legeSchnappschussAn(objektId, gespeichert, opt,
+
+    // Stornierte Zeilen gehören mitgespeichert: sonst erfährt der Bestand nie,
+    // dass eine früher bestätigte Buchung storniert wurde, und sie bliebe
+    // steuerpflichtig stehen. Beim Lesen filtert compute() sie am Status.
+    const alle=res.bookings.concat(res.storniert);
+    const ohneCode=alle.filter(b=>!b.stabil).length;
+    const kaputt=alle.filter(b=>b.stabil && b.betragStatus==='ungueltig');
+    // Ein unlesbarer Betrag darf einen bereits gespeicherten, richtigen Wert
+    // nicht mit 0 überschreiben. Solche Zeilen werden zurückgestellt.
+    const neu=alle.filter(b=>b.stabil && b.betragStatus!=='ungueltig')
+                  .map(b=>alsBuchungsdokument(b, ziel));
+
+    const gespeichert=await daten.ladeBuchungen(ziel);
+    if(ziel!==objektId) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    if(gespeichert.length){
+      // Der Schnappschuss gehört mit den Einstellungen gesichert, unter denen
+      // dieser Bestand entstanden ist — nicht mit den gerade eingestellten.
+      // Sonst ist die frühere Rechnung nicht reproduzierbar.
+      const alteOpt = await daten.ladeEinstellungen();
+      await daten.legeSchnappschussAn(ziel, gespeichert, alteOpt||opt,
         {grund:'import', datei:dateiname, hash:textHash(text)});
+    }
     const vm=verschmelzeBuchungen(gespeichert, neu);
-    await daten.schreibeBuchungen(objektId, vm.schreiben);
+    if(ziel!==objektId) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    await daten.schreibeBuchungen(ziel, vm.schreiben);
     await daten.speichereEinstellungen(opt);
+    if(ziel!==objektId) return;              // Anzeige gehört jetzt dem anderen Objekt
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
     run();
 
     const info=$('paidInfo'), teile=[];
     teile.push(vm.schreiben.length+' Buchung'+(vm.schreiben.length===1?'':'en')+' gespeichert');
+    const stornos=res.storniert.filter(b=>b.stabil).length;
+    if(stornos) teile.push(stornos+' als storniert vermerkt');
     if(vm.unberuehrt.length) teile.push(vm.unberuehrt.length+' aus früheren Importen unberührt');
-    if(uebersprungen) teile.push(uebersprungen+' ohne Bestätigungs-Code nicht gespeichert');
+    if(ohneCode) teile.push(ohneCode+' ohne Bestätigungs-Code nicht gespeichert');
+    if(kaputt.length)
+      teile.push('Achtung: '+kaputt.length+' Zeile'+(kaputt.length===1?'':'n')
+        +' mit unlesbarem Betrag zurückgestellt ('+kaputt.map(b=>b.code).slice(0,5).join(', ')
+        +') — der gespeicherte Stand bleibt unangetastet');
     if(vm.konflikte.length)
       teile.push('Achtung: '+vm.konflikte.length+' von Hand gesetzte Gastbeträge wurden von der '
         +'Datei überschrieben ('+vm.konflikte.map(k=>k.code+': '+fmt(k.alt)+' → '+fmt(k.neu)).join(', ')+')');
     info.textContent=teile.join(' · ');
     info.classList.remove('hide');
     stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+    fuelleStaende();
   }catch(ex){
     stand('Nicht gespeichert: '+ex.message, true);
   }
+}
+
+/* Eingetippte Gastbeträge in die Datenbank schreiben. Vorher landeten sie nur
+   in paidRaw und waren beim Schließen weg — obwohl die Wolke „gespeichert“
+   anzeigte. Entprellt, weil bei jedem Tastendruck gefeuert wird. */
+let tippUhr=null;
+function speichereEingabe(){
+  if(!(daten && konto && objektId) || !wolkeBestand) return;
+  stand('nicht gespeichert', true);
+  clearTimeout(tippUhr);
+  tippUhr=setTimeout(async()=>{
+    const ziel=objektId;
+    try{
+      const opt=optionen();
+      const res=compute(aktuelleZeilen(),opt);
+      const docs=res.bookings.filter(b=>b.stabil && b.betragStatus!=='ungueltig')
+                             .map(b=>alsBuchungsdokument(b, ziel));
+      await daten.schreibeBuchungen(ziel, docs);
+      await daten.speichereEinstellungen(opt);
+      if(ziel!==objektId) return;
+      wolkeBestand=docs;
+      stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+    }catch(ex){ stand('Nicht gespeichert: '+ex.message, true); }
+  }, 1200);
 }
 
 $('anmelden').onclick=async()=>{
@@ -495,6 +553,52 @@ $('abmelden').onclick=async()=>{
   catch(ex){ stand(ex.message, true); }
 };
 $('objekt').onchange=async()=>{ objektId=$('objekt').value; await ladeBestand(); };
+
+/* Frühere Stände anbieten. Ein Schnappschuss, den man nicht zurückspielen
+   kann, ist kein Schutz — er lag bisher nur in der Datenbank herum. */
+async function fuelleStaende(){
+  try{
+    const liste=await daten.ladeSchnappschuesse(objektId);
+    $('stand').innerHTML='<option value="">— früherer Stand —</option>'
+      +liste.map(x=>{
+        const d=new Date(x.zeitpunkt.slice(0,19).replace(/-(\d\d)-(\d\d)-(\d\d)$/,':$1:$2.$3')
+                          .replace(/-/g,(m,i)=>i<8?'-':m));
+        const zeit=isNaN(d)?x.zeitpunkt.slice(0,16):d.toLocaleString('de-AT');
+        return '<option value="'+esc(x.zeitpunkt)+'">'+esc(zeit)+' · '
+          +(x.anzahl||0)+' Buchungen'+(x.datei?' · vor '+esc(x.datei):'')+'</option>';
+      }).join('');
+    const da=liste.length>0;
+    $('standWahl').classList.toggle('hide',!da);
+    $('standZurueck').classList.toggle('hide',!da);
+  }catch(ex){ /* ohne Stände bleibt die Auswahl verborgen */ }
+}
+
+$('standZurueck').onclick=async()=>{
+  const z=$('stand').value;
+  if(!z) return stand('Zuerst einen Stand auswählen.', true);
+  const ziel=objektId;
+  if(!confirm('Diesen Stand zurückspielen? Der aktuelle Bestand wird vorher gesichert.')) return;
+  try{
+    stand('spielt zurück …');
+    const jetzt=await daten.ladeBuchungen(ziel);
+    if(jetzt.length)
+      await daten.legeSchnappschussAn(ziel, jetzt, await daten.ladeEinstellungen()||optionen(),
+        {grund:'wiederherstellung', datei:null, hash:null});
+    const alt=await daten.ladeSchnappschuss(ziel, z);
+    await daten.schreibeBuchungen(ziel, alt.buchungen||[]);
+    if(alt.einstellungen) { await daten.speichereEinstellungen(alt.einstellungen);
+                            uebernimmEinstellungen(alt.einstellungen); }
+    if(ziel!==objektId) return;
+    // Getipptes aus der Sitzung würde den zurückgespielten Stand sofort wieder
+    // überlagern — es gehört zum verworfenen Stand, nicht zum alten.
+    for(const k in paidRaw) delete paidRaw[k];
+    await ladeBestand();
+    await fuelleStaende();
+    $('paidInfo').textContent='Stand vom '+z.slice(0,16)+' zurückgespielt · '
+      +(alt.buchungen||[]).length+' Buchungen · der vorherige Bestand wurde gesichert';
+    $('paidInfo').classList.remove('hide');
+  }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
+};
 $('objektNeu').onclick=async()=>{
   const name=prompt('Name des neuen Objekts:');
   if(!name) return;

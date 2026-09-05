@@ -458,7 +458,7 @@ if(location.search.indexOf('selftest')>=0){
   t('CSV schreiben','Buchungsexport quotet den Namen',
     baueCsvBuchungen(sonder).split('\n')[1].indexOf('"A;B"')>=0, true);
   t('CSV schreiben','Buchungsexport bleibt spaltentreu', zB[1]?zB[1].length:0, zB[0].length);
-  t('CSV schreiben','Monatsexport bleibt spaltentreu', zM[1]?zM[1].length:0, 6);
+  t('CSV schreiben','Monatsexport bleibt spaltentreu', zM[1]?zM[1].length:0, zM[0].length);
 
   /* Identität — ein gemerkter Gastbetrag darf nur an einem echten
      Bestätigungs-Code hängen. Ohne Code bekommt die Zeile einen flüchtigen
@@ -804,6 +804,79 @@ if(location.search.indexOf('selftest')>=0){
     baueCsvBuchungen(gefahr).split('\n')[1].indexOf("'-")<0, true);
   t('CSV schreiben','Gastbeträge-Datei bleibt unverändert einlesbar',
     compute(parseCSV(baueCsvGastbetraege(gefahr)),BASE).bookings[0].name, '=1+1');
+
+  /* Nachprüfung des Branch-Reviews vom 05.09.2026 (Befunde 1–8 dort). */
+
+  /* Befund 2: eine stornierte Zeile muss den Bestand erreichen, sonst bleibt
+     eine früher gespeicherte bestätigte Buchung steuerpflichtig stehen. */
+  const stor=csv('HM1;Storniert;G;05.08.2026;06.08.2026;;100');
+  t('Nachprüfung','Storno zählt nicht in der Meldung', stor.bookings.length, 0);
+  t('Nachprüfung','Storno wird aber zurückgegeben', stor.storniert.length, 1);
+  /* Defensiv: fällt die Storno-Liste weg, sollen die Fälle rot werden und
+     nicht den ganzen Lauf mit einer Exception abbrechen. */
+  t('Nachprüfung','mit Code und Status',
+    stor.storniert[0] ? stor.storniert[0].code+'/'+stor.storniert[0].status : null, 'HM1/Storniert');
+  t('Nachprüfung','englischer Status ebenso',
+    csv('HM1;Cancelled;G;05.08.2026;06.08.2026;;100').storniert.length, 1);
+  t('Nachprüfung','bestätigte Buchung landet nicht in storniert',
+    csv('HM1;Bestätigt;G;05.08.2026;06.08.2026;;100').storniert.length, 0);
+  /* Und der Weg über die Datenbank: alt bestätigt, neu storniert → steuerfrei */
+  const altD=csv('HM1;Bestätigt;G;05.08.2026;06.08.2026;;100').bookings.map(b=>alsBuchungsdokument(b,'o1'));
+  const neuD=stor.storniert.map(b=>alsBuchungsdokument(b,'o1'));
+  const vmS=verschmelzeBuchungen(altD,neuD);
+  const nachher=compute(alsCsvZeilen(vmS.unberuehrt.concat(vmS.schreiben)),BASE);
+  t('Nachprüfung','nach dem Storno-Import keine Buchung mehr', nachher.bookings.length, 0);
+  t('Nachprüfung','und keine Ortstaxe', nachher.months.length, 0);
+
+  /* Befund 4: ein unlesbarer Betrag ist als solcher erkennbar, damit er einen
+     gespeicherten richtigen Wert nicht mit 0 überschreibt. */
+  t('Nachprüfung','unlesbarer Betrag ist am Status erkennbar',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100abc200').bookings[0].betragStatus, 'ungueltig');
+  t('Nachprüfung','sauberer Betrag ebenso',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].betragStatus, 'ok');
+  t('Nachprüfung','mehrdeutiger Betrag ebenso',
+    csv('HM1;;G;05.08.2026;06.08.2026;;1.234').bookings[0].betragStatus, 'mehrdeutig');
+
+  /* Befund 5: das flüchtige Anzeigelabel darf nicht als echter Code exportiert
+     werden — sonst wird es beim Wiedereinlesen zu einer stabilen Identität. */
+  const ohneC=compute(parseCSV('Status;Name des Gastes;Startdatum;Enddatum;Einkünfte'
+    +'\n;Anna;05.08.2026;06.08.2026;100'),BASE);
+  t('Nachprüfung','intern flüchtiger Schlüssel', ohneC.bookings[0].stabil, false);
+  t('Nachprüfung','Codespalte im Export bleibt leer',
+    baueCsvGastbetraege(ohneC).split('\n')[1].split(';')[0], '');
+  t('Nachprüfung','nach Wiedereinlesen weiterhin flüchtig',
+    compute(parseCSV(baueCsvGastbetraege(ohneC)),BASE).bookings[0].stabil, false);
+  t('Nachprüfung','Buchung mit Code wird normal exportiert',
+    baueCsvGastbetraege(csv('HM1;;G;05.08.2026;06.08.2026;;100')).split('\n')[1].split(';')[0], 'HM1');
+
+  /* Befund 6: die Herkunft muss im echten Pfad entstehen, nicht nur im Test. */
+  const PH2='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  t('Nachprüfung','Wert aus der Datei ist Herkunft „datei“',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),BASE).bookings[0].gastbetragQuelle, 'datei');
+  t('Nachprüfung','eingetippter Wert ist Herkunft „manuell“',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;'),
+            Object.assign({},BASE,{paid:{HM1:'150,00'}})).bookings[0].gastbetragQuelle, 'manuell');
+  t('Nachprüfung','die Herkunft landet auch im Dokument',
+    alsBuchungsdokument(compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;'),
+      Object.assign({},BASE,{paid:{HM1:'150,00'}})).bookings[0],'o1').gastbetragQuelle, 'manuell');
+  t('Nachprüfung','abweichender Wert aus der Datei wird gemeldet',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),
+            Object.assign({},BASE,{paid:{HM1:'120,00'}})).warn.some(w=>/Datei nennt/.test(w)), true);
+  t('Nachprüfung','gleicher Wert meldet nichts',
+    compute(parseCSV(PH2+'\nHM1;;G;05.08.2026;06.08.2026;;100;150'),
+            Object.assign({},BASE,{paid:{HM1:'150,00'}})).warn.some(w=>/Datei nennt/.test(w)), false);
+
+  /* Befund 7: auch Exporte und Jahrestabelle trennen Entgelt und Grundlage. */
+  const jj=jahressummen(buchung('01.06.2026','02.06.2026',1000).months);
+  t('Nachprüfung','Jahrestabelle führt das Entgelt', fmt(jj[0].base), '972,31');
+  t('Nachprüfung','Jahrestabelle führt die Grundlage', fmt(jj[0].grundlage), '865,35');
+  t('Nachprüfung','Grundlage × 3,2 % = Jahressteuer', fmt(round2(jj[0].grundlage*0.032)), fmt(jj[0].tax));
+  const mk=parseCSV(baueCsvMonate(buchung('01.06.2026','02.06.2026',1000),'601005590'));
+  t('Nachprüfung','Monatsexport nennt beide Spalten',
+    mk[0].indexOf('Entgelt_ohne_USt_Taxe')>=0 && mk[0].indexOf('Grundlage_nach_Pauschale')>=0, true);
+  t('Nachprüfung','Monatsexport trägt beide Werte', mk[1][3]+'/'+mk[1][4], '972,31/865,35');
+  const bk=parseCSV(baueCsvBuchungen(buchung('01.06.2026','02.06.2026',1000)));
+  t('Nachprüfung','Buchungsexport bleibt spaltentreu', bk[1].length, bk[0].length);
 
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
