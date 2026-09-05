@@ -6,6 +6,14 @@
 const STICHTAG_5 = Date.UTC(2026,6,1);
 const STICHTAG_8 = Date.UTC(2027,6,1);
 const EFF = {r32:0.032*0.89, r50:0.05, r80:0.08};
+/* Der 11-%-Pauschalabzug nach § 12 Abs. 2 lit. c WTFG, bis 30.06.2026. Er
+   steckt oben im effektiven Satz (0.032*0.89) — deshalb ist die Zahl, die
+   das Tool als Grundlage führt, für diesen Zeitraum das Entgelt *vor* dem
+   Abzug. Hier steht er getrennt, damit beide Zahlen benennbar sind. */
+const PAUSCHALE = {r32:0.89, r50:1, r80:1};
+/* Die steuerpflichtige Grundlage nach dem Pauschalabzug. Ab Juli 2026 ist
+   sie mit dem Entgelt identisch, weil lit. c entfallen ist. */
+function steuergrundlage(entgelt, reg){ return entgelt*PAUSCHALE[reg]; }
 
 function regimeOf(ts){ return ts < STICHTAG_5 ? 'r32' : (ts < STICHTAG_8 ? 'r50' : 'r80'); }
 function fmt(n){ return n.toLocaleString('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -35,6 +43,20 @@ function csvZelle(v){
   return /[";\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
 }
 function csvZeile(felder){ return felder.map(csvZelle).join(';'); }
+
+/* Freitext für die menschenlesbaren Exporte. Tabellenprogramme werten einen
+   Zellinhalt aus, der mit = + - @ oder einem Steuerzeichen beginnt; ein
+   Gastname wie „=1+1“ wäre dort eine Formel. Ein vorangestelltes Apostroph
+   verhindert das.
+
+   Nur auf Freitext anwenden, niemals auf Zahlen — „-50,00“ beginnt ebenfalls
+   mit einem geschützten Zeichen und würde als „'-50,00“ unbrauchbar. Und
+   bewusst nicht in der Gastbeträge-Datei: die ist der Round-Trip-Speicher
+   und muss unverändert wieder einlesbar sein. */
+function csvText(v){
+  const s = String(v==null?'':v);
+  return /^[=+\-@\t\r]/.test(s) ? "'"+s : s;
+}
 
 /* --- CSV --- */
 function parseCSV(text){
@@ -492,8 +514,8 @@ function baueCsvMonate(res, konto){
 function baueCsvBuchungen(res){
   return 'Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
     res.bookings.flatMap(b=>{
-      if(b.exempt) return [csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'])];
-      return b.parts.map(p=>csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),
+      if(b.exempt) return [csvZeile([csvText(b.code),csvText(b.name),csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'])];
+      return b.parts.map(p=>csvZeile([csvText(b.code),csvText(b.name),csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),
         monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))]));
     }).join('\n');
 }
@@ -660,5 +682,8 @@ export {
   alsCsvZeilen,
   textHash,
   baueSchnappschuss,
-  verschmelzeBuchungen
+  verschmelzeBuchungen,
+  PAUSCHALE,
+  steuergrundlage,
+  csvText
 };

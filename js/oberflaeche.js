@@ -19,6 +19,8 @@ import {
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
+  PAUSCHALE,
+  steuergrundlage,
   alsCsvZeilen,
   alsBuchungsdokument,
   verschmelzeBuchungen,
@@ -54,12 +56,13 @@ function renderQuota(bookings, mode){
       // Der Zähler kann nur zählen, was in der Datei steht. Beginnt das Jahr
       // erst später, fehlen womöglich frühere Aufenthalte — und dann ist jede
       // Zahl hier zu günstig.
-      +(d.von>Date.UTC(d.year,0,1)
-        ? '<div class="flag satz" style="margin-top:8px">Diese Datei kennt '+d.year+' erst ab '
-          +new Date(d.von).toLocaleDateString('de-AT',{timeZone:'UTC'})
-          +'. Frühere Aufenthalte desselben Jahres fehlen im Zähler — für eine belastbare Zahl '
-          +'die CSV über das ganze Kalenderjahr exportieren.</div>'
-        : '')
+      +'<div class="flag satz" style="margin-top:8px">Gezählt ist nur, was in dieser Datei steht'
+        +(d.von>Date.UTC(d.year,0,1)
+          ? ' — und sie kennt '+d.year+' erst ab '
+            +new Date(d.von).toLocaleDateString('de-AT',{timeZone:'UTC'})+'.'
+          : '.')
+        +' Ob der Export das ganze Kalenderjahr abdeckt, lässt sich aus den Buchungen nicht '
+        +'ableiten; im Zweifel ist die Zahl hier zu günstig.</div>'
     +'</div>';
   }).join('')
   + '<div class="note" style="margin-top:0">Gezählt werden nur bestätigte Buchungen aus dieser CSV. Baurechtlich zählt bereits das <em>Anbieten</em> der Wohnung — leerstehende, aber inserierte Tage sind hier nicht erfasst. Aufenthalte über 3 Monate gelten nicht als Kurzzeitvermietung und bleiben außen vor.</div>';
@@ -83,7 +86,12 @@ function render(res, opt){
     +(opt.gastfee?' · Gast-Servicegebühr '+opt.gastfee.toFixed(2).replace('.',',')+' % aufgeschlagen':' · ohne Gast-Servicegebühr')
     +' · '+res.bookings.length+' Buchungen';
   const mt=document.getElementById('months');
-  let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th><th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th></tr>';
+  // Bis 30.06.2026 steckt der 11-%-Pauschalabzug im effektiven Satz. Die Zahl
+  // in dieser Spalte ist deshalb für diesen Zeitraum das Entgelt *vor* dem
+  // Abzug — sie „Bemessungsgrundlage“ zu nennen, vermischte beides. Wo sich
+  // die beiden unterscheiden, steht die steuerpflichtige Grundlage darunter.
+  let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th>'
+    +'<th class="num">Entgelt ohne USt/Taxe</th><th class="num">Ortstaxe</th></tr>';
   res.months.forEach(m=>{
     // Überwiesen wird pro Monat dieser gerundete Betrag; die Fußzeile summiert
     // in monatsSummen() über genau dieselben Werte.
@@ -91,7 +99,10 @@ function render(res, opt){
     h+='<tr><td class="mono">'+monthLabel(m.month)+'</td>'
       +'<td><span class="rate '+m.reg+'">'+pct(EFF[m.reg])+'</span></td>'
       +'<td class="num">'+m.nights+'</td>'
-      +'<td class="num">'+fmt(m.base)+'</td>'
+      +'<td class="num">'+fmt(m.base)
+        +(PAUSCHALE[m.reg]===1 ? ''
+          : '<div class="dim mono" style="font-size:11px">− 11 % Pauschale → '
+            +fmt(round2(steuergrundlage(m.base,m.reg)))+'</div>')+'</td>'
       +'<td class="num"><strong>'+fmt(tr)+'</strong></td></tr>';
   });
   const sum=monatsSummen(res.months);
@@ -135,14 +146,22 @@ function render(res, opt){
   // Die Erklärung gilt für das ganze Jahr. Deckt die Datei es nicht ab, ist
   // jede Summe hier zu niedrig — und zwar ohne dass man es sieht.
   const luecken=jahre.filter(j=>j.von!==j.jahr+'-01');
+  // Ob eine Datei ein Kalenderjahr vollständig abdeckt, steht nicht in ihr
+  // drin: ein Export kann legitim erst im Februar beginnen, und ein Export mit
+  // einer einzigen Januarbuchung sieht aus wie ein vollständiger. Der Hinweis
+  // steht deshalb immer — vorher fehlte er genau im ersten Fall und erschien
+  // fälschlich im zweiten.
   document.getElementById('jahrNote').innerHTML =
     'Die Erklärung ist bis 15. Februar des Folgejahres elektronisch einzubringen und umfasst '
     +'die gesamte im Kalenderjahr entstandene Abgabenschuld. Gerundet wird je Meldeperiode, '
     +'damit die Jahressumme zu den einzelnen Überweisungen passt.'
-    +(luecken.length ? '<br><br><strong>Unvollständig:</strong> '
+    +'<br><br><strong>Summe der geladenen Buchungen; Vollständigkeit ungeprüft.</strong> '
+    +'Aus den Buchungen allein lässt sich nicht ableiten, welchen Zeitraum der Export '
+    +'abdeckt. Vor der Erklärung gegen den Airbnb-Export über das ganze Kalenderjahr '
+    +'prüfen — auch auf bestätigte Aufenthalte, die noch bevorstehen.'
+    +(luecken.length ? ' Auffällig: '
       +luecken.map(j=>j.jahr+' beginnt in dieser Datei erst mit '+monthLabel(j.von)).join(', ')
-      +'. Für eine Erklärung muss die CSV das ganze Kalenderjahr abdecken — sonst ist die Summe zu niedrig.'
-      : '');
+      +'.' : '');
 
   const rt=document.getElementById('rows');
   // Fokus und Cursor merken: getippt wird in diese Tabelle, und sie wird bei

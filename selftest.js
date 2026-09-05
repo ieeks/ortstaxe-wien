@@ -30,7 +30,10 @@ import {
   alsCsvZeilen,
   textHash,
   baueSchnappschuss,
-  verschmelzeBuchungen
+  verschmelzeBuchungen,
+  PAUSCHALE,
+  steuergrundlage,
+  csvText
 } from './js/kern.js';
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
@@ -765,6 +768,42 @@ if(location.search.indexOf('selftest')>=0){
     pcsv('T;;G;05.08.2026;06.08.2026;;100;50', {gastfee:14}).bookings[0].paid, 50);
   t('Betragsherkunft','ein Beleg wird nicht als geschätzt gemeldet',
     pcsv('T;;G;05.08.2026;06.08.2026;;100;150', {gastfee:14}).warn.some(w=>/pauschal/.test(w)), false);
+
+  /* Pauschalabzug (F13). Bis 30.06.2026 steckt der 11-%-Abzug im effektiven
+     Satz — die geführte Grundlage ist für diesen Zeitraum das Entgelt davor. */
+  t('Pauschalabzug','bis Juni 2026 gilt 89 %', PAUSCHALE.r32, 0.89);
+  t('Pauschalabzug','ab Juli 2026 kein Abzug mehr', PAUSCHALE.r50, 1);
+  t('Pauschalabzug','ab Juli 2027 ebenfalls nicht', PAUSCHALE.r80, 1);
+  const juni=buchung('01.06.2026','02.06.2026',1000).months[0];
+  t('Pauschalabzug','Juni: geführtes Entgelt', fmt(juni.base), '972,31');
+  t('Pauschalabzug','Juni: Grundlage nach Abzug',
+    fmt(round2(steuergrundlage(juni.base,juni.reg))), '865,35');
+  /* Der eigentliche Nachweis: Grundlage nach Abzug mal gesetzlicher Satz
+     ergibt die Steuer. Vorher passte 972,31 x 3,2 % = 31,11 nicht zu 27,69. */
+  t('Pauschalabzug','Juni: Grundlage × 3,2 % = Ortstaxe',
+    fmt(round2(steuergrundlage(juni.base,juni.reg)*0.032)), fmt(round2(juni.tax)));
+  const juli=buchung('01.07.2026','02.07.2026',1000).months[0];
+  t('Pauschalabzug','Juli: Grundlage bleibt das Entgelt',
+    fmt(round2(steuergrundlage(juli.base,juli.reg))), fmt(juli.base));
+  t('Pauschalabzug','Juli: Grundlage × 5 % = Ortstaxe',
+    fmt(round2(steuergrundlage(juli.base,juli.reg)*0.05)), fmt(round2(juli.tax)));
+
+  /* Formelauswertung in Tabellenprogrammen (F16) */
+  t('CSV schreiben','Gleichheitszeichen wird entschärft', csvText('=1+1'), "'=1+1");
+  t('CSV schreiben','Plus wird entschärft', csvText('+1'), "'+1");
+  t('CSV schreiben','At-Zeichen wird entschärft', csvText('@SUM(A1)'), "'@SUM(A1)");
+  t('CSV schreiben','Minus wird entschärft', csvText('-1+1'), "'-1+1");
+  t('CSV schreiben','harmloser Name bleibt unberührt', csvText('Anna Muster'), 'Anna Muster');
+  t('CSV schreiben','leerer Wert bleibt leer', csvText(''), '');
+  const gefahr=compute(parseCSV(HEAD+'\nT;;=1+1;05.08.2026;06.08.2026;;-100'),BASE);
+  t('CSV schreiben','Buchungsexport entschärft den Gastnamen',
+    baueCsvBuchungen(gefahr).split('\n')[1].indexOf("'=1+1")>=0, true);
+  /* Zahlen dürfen dabei nicht mitgeschützt werden: -100 beginnt ebenfalls mit
+     einem gefährlichen Zeichen und wäre als "'-100,00" unbrauchbar. */
+  t('CSV schreiben','negativer Betrag bleibt eine Zahl',
+    baueCsvBuchungen(gefahr).split('\n')[1].indexOf("'-")<0, true);
+  t('CSV schreiben','Gastbeträge-Datei bleibt unverändert einlesbar',
+    compute(parseCSV(baueCsvGastbetraege(gefahr)),BASE).bookings[0].name, '=1+1');
 
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
