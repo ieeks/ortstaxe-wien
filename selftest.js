@@ -878,6 +878,32 @@ if(location.search.indexOf('selftest')>=0){
   const bk=parseCSV(baueCsvBuchungen(buchung('01.06.2026','02.06.2026',1000)));
   t('Nachprüfung','Buchungsexport bleibt spaltentreu', bk[1].length, bk[0].length);
 
+  /* Zweite Nachprüfung, Befund 4: „manuell“ heißt, ein Mensch hat etwas
+     anderes gesetzt als die Quelle sagt — nicht bloß „kam aus der Eingabe“.
+     merkeGastbetraege schreibt die Dateiwerte selbst nach paidRaw; ohne den
+     Vergleich wären danach alle Werte „manuell“. */
+  const QH='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt';
+  const qh=(zeile,p)=>compute(parseCSV(QH+'\n'+zeile),Object.assign({},BASE,{paid:p||{}}));
+  const Z='HM1;;G;05.08.2026;06.08.2026;;100;150';
+  t('Herkunft','ohne Eingabe ist die Quelle die Datei', qh(Z).bookings[0].gastbetragQuelle, 'datei');
+  t('Herkunft','gleicher Wert in der Eingabe bleibt „datei“',
+    qh(Z,{HM1:'150,00'}).bookings[0].gastbetragQuelle, 'datei');
+  t('Herkunft','abweichender Wert ist „manuell“',
+    qh(Z,{HM1:'120,00'}).bookings[0].gastbetragQuelle, 'manuell');
+  t('Herkunft','Eingabe ohne Dateiwert ist „manuell“',
+    qh('HM1;;G;05.08.2026;06.08.2026;;100;',{HM1:'120,00'}).bookings[0].gastbetragQuelle, 'manuell');
+  /* Und der Kern von Befund 4: keine Überschreibung heißt, der Dateiwert gilt.
+     Vorher blieb ein geleertes Feld als '' liegen, behielt Vorrang und die
+     Rechnung fiel auf die Schätzung zurück — während die Warnung zum Leeren riet. */
+  t('Herkunft','ohne Überschreibung gilt der Dateiwert', qh(Z).bookings[0].paid, 150);
+  t('Herkunft','und er gilt als Beleg', qh(Z).bookings[0].betragQuelle, 'beleg');
+  t('Herkunft','gleicher Wert meldet keinen Konflikt',
+    qh(Z,{HM1:'150,00'}).warn.some(w=>/die Datei nennt/.test(w)), false);
+  t('Herkunft','abweichender Wert meldet einen Konflikt',
+    qh(Z,{HM1:'120,00'}).warn.some(w=>/die Datei nennt/.test(w)), true);
+  t('Herkunft','die Warnung rät nur noch zum Leeren, nicht zum Neuladen',
+    qh(Z,{HM1:'120,00'}).warn.some(w=>/neu laden/.test(w)), false);
+
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
   const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};

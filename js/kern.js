@@ -314,16 +314,23 @@ function compute(csvRows, opt){
     // Woher der Gastbetrag kommt. Ohne dieses Feld war der Konfliktzweig in
     // verschmelzeBuchungen unerreichbar: alsBuchungsdokument setzte immer
     // 'datei', und nur die Tests konstruierten 'manuell' von Hand.
-    const gastbetragQuelle = ov!==undefined ? 'manuell' : 'datei';
+    // „manuell“ heißt: ein Mensch hat etwas anderes gesetzt als die Datei sagt.
+    // Nur „kam aus der Eingabe“ genügt nicht — merkeGastbetraege schreibt die
+    // Dateiwerte selbst nach paidRaw, die wären sonst alle „manuell“.
+    const gDateiV = ausDatei ? leseGeld(ausDatei) : null;
+    const gastbetragQuelle =
+      ov===undefined ? 'datei'
+      : (gDateiV && gDateiV.status!=='ungueltig' && Math.abs(gDateiV.wert-gPaid.wert)<=0.005)
+        ? 'datei' : 'manuell';
     // Ein gemerkter Wert schlägt die Datei — das ist gewollt, darf aber nicht
     // still geschehen, wenn beide etwas anderes sagen.
     if(ov!==undefined && ausDatei){
-      const gDatei=leseGeld(ausDatei);
-      if(gDatei.status!=='leer' && gDatei.status!=='ungueltig'
-         && Math.abs(gDatei.wert-gPaid.wert)>0.005)
-        warn.push(code+' ('+name+') — die Datei nennt '+fmt(gDatei.wert)+' € als Gastbetrag, '
+      if(gDateiV && gDateiV.status!=='leer' && gDateiV.status!=='ungueltig'
+         && Math.abs(gDateiV.wert-gPaid.wert)>0.005)
+        warn.push(code+' ('+name+') — die Datei nennt '+fmt(gDateiV.wert)+' € als Gastbetrag, '
           +'im Tool stehen '+fmt(gPaid.wert)+' €. Gerechnet wird mit dem Wert aus dem Tool. '
-          +'Zum Übernehmen des Dateiwerts das Feld leeren und die Datei neu laden.');
+          +'Zum Übernehmen des Dateiwerts das Feld leeren — dann greift wieder der Wert '
+          +'aus der Datei.');
     }
     if(gPaid.status==='ungueltig')
       warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ist kein lesbarer Geldwert. '

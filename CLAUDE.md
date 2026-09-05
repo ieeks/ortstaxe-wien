@@ -150,6 +150,23 @@ Die ganze Schicht ist additiv: ohne Anmeldung, ohne Netz oder bei einem
 SDK-Fehler verhält sich das Werkzeug genau wie vorher. `js/daten.js` ist die
 einzige Stelle, die mit Firebase spricht, und rechnet nichts.
 
+**Welche Quelle gerade gilt**, entscheidet `aktuelleZeilen()`: liegt ein Bestand
+aus der Datenbank vor, hat er Vorrang; sonst die zuletzt geladene CSV. Nach dem
+ersten Speichern ist also die Datenbank die Wahrheit. Ein geleertes Eingabefeld
+hebt die Überschreibung auf und gibt den Wert der *aktuellen* Quelle frei — im
+CSV-Betrieb den Dateiwert, danach den gespeicherten. `gastbetragQuelle` ist
+deshalb ein Vergleich, kein Herkunftsvermerk: „manuell“ heißt, jemand hat etwas
+anderes gesetzt als die Quelle sagt.
+
+**Zurückspielen ist ein Bestandsabgleich, kein Überschreiben.** `schreibeBuchungen`
+mischt nur und löscht nie — Buchungen, die erst nach dem Schnappschuss dazukamen,
+werden deshalb ausdrücklich entfernt. Ohne das ließe sich ein fehlerhafter Import
+zusätzlicher Zeilen nicht rückgängig machen.
+
+**Jeder verzögerte Schreibvorgang hält sein Ziel und seine Daten beim Auslösen
+fest**, nicht erst beim Ausführen. Sonst landet nach einem Objektwechsel der
+Bestand von Wohnung A unter Wohnung B.
+
 **Ungeprüft und vor dem ersten Einsatz zu prüfen:**
 
 - Die in `js/firebase-config.js` gepinnte SDK-Version. Sie ließ sich in der

@@ -194,7 +194,15 @@ function render(res, opt){
   });
   rt.innerHTML=g;
   rt.querySelectorAll('.paid-in').forEach(el=>{
-    el.oninput=()=>{ paidRaw[el.dataset.key]=el.value; ungespeichert=true; run(); speichereEingabe(); };
+    el.oninput=()=>{
+      // Ein geleertes Feld hebt die Überschreibung auf, statt als ausdrückliche
+      // Null zu gelten. Vorher blieb '' liegen, behielt Vorrang vor der Datei
+      // und die Rechnung fiel auf die Schätzung zurück — die Warnung riet
+      // trotzdem zum Leeren.
+      if(el.value.trim()==='') delete paidRaw[el.dataset.key];
+      else paidRaw[el.dataset.key]=el.value;
+      ungespeichert=true; run(); speichereEingabe();
+    };
   });
   if(hadFocus){
     const el=rt.querySelector('.paid-in[data-key="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
@@ -368,7 +376,11 @@ function ladeGastbetraege(f){
       const map=leseGastbetraege(parseCSV(r.result));
       const codes=Object.keys(map);
       codes.forEach(c=>{ paidRaw[c]=map[c]; });
+      // Nachgeladene Werte sind so viel wert wie getippte und gehören denselben
+      // Weg: Marker setzen und in die Datenbank schreiben.
+      ungespeichert=true;
       run();
+      speichereEingabe();
       const treffer=[...document.querySelectorAll('.paid-in')].filter(x=>map[x.dataset.key]!==undefined).length;
       // Gezählt wird, was die Rechnung wirklich benutzt — ein gefülltes, aber
       // verworfenes Feld ist kein Beleg.
@@ -528,18 +540,25 @@ function speichereEingabe(){
   if(!(daten && konto && objektId) || !wolkeBestand) return;
   stand('nicht gespeichert', true);
   clearTimeout(tippUhr);
+  // Ziel UND Daten jetzt festhalten, nicht erst wenn der Timer abläuft. Sonst
+  // wird nach einem Objektwechsel der Bestand von Wohnung A unter Wohnung B
+  // geschrieben: die Daten stammen noch aus A, die Ziel-ID schon aus B.
+  const ziel=objektId, opt=optionen();
+  let docs;
+  try{
+    docs=compute(aktuelleZeilen(),opt).bookings
+          .filter(b=>b.stabil && b.betragStatus!=='ungueltig')
+          .map(b=>alsBuchungsdokument(b, ziel));
+  }catch(ex){ return stand('Nicht gespeichert: '+ex.message, true); }
   tippUhr=setTimeout(async()=>{
-    const ziel=objektId;
+    if(ziel!==objektId) return;            // inzwischen gewechselt — verwerfen
     try{
-      const opt=optionen();
-      const res=compute(aktuelleZeilen(),opt);
-      const docs=res.bookings.filter(b=>b.stabil && b.betragStatus!=='ungueltig')
-                             .map(b=>alsBuchungsdokument(b, ziel));
       await daten.schreibeBuchungen(ziel, docs);
       await daten.speichereEinstellungen(opt);
       if(ziel!==objektId) return;
       wolkeBestand=docs;
       stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+      fuelleStaende();
     }catch(ex){ stand('Nicht gespeichert: '+ex.message, true); }
   }, 1200);
 }
@@ -552,7 +571,11 @@ $('abmelden').onclick=async()=>{
   try{ await daten.abmelden(); wolkeBestand=null; objektId=null; objekte=[]; stand(''); }
   catch(ex){ stand(ex.message, true); }
 };
-$('objekt').onchange=async()=>{ objektId=$('objekt').value; await ladeBestand(); };
+$('objekt').onchange=async()=>{
+  clearTimeout(tippUhr);                   // ausstehende Speicherung gehört zum alten Objekt
+  objektId=$('objekt').value;
+  await ladeBestand();
+};
 
 /* Frühere Stände anbieten. Ein Schnappschuss, den man nicht zurückspielen
    kann, ist kein Schutz — er lag bisher nur in der Datenbank herum. */
@@ -585,7 +608,16 @@ $('standZurueck').onclick=async()=>{
       await daten.legeSchnappschussAn(ziel, jetzt, await daten.ladeEinstellungen()||optionen(),
         {grund:'wiederherstellung', datei:null, hash:null});
     const alt=await daten.ladeSchnappschuss(ziel, z);
-    await daten.schreibeBuchungen(ziel, alt.buchungen||[]);
+    const zurueck=alt.buchungen||[];
+    // Zurückspielen heißt Bestandsabgleich, nicht Überschreiben: Buchungen, die
+    // erst nach dem Schnappschuss dazugekommen sind, müssen weg. Sonst lässt
+    // sich ein fehlerhafter Import zusätzlicher Zeilen nicht rückgängig machen —
+    // schreibeBuchungen mischt nur und löscht nie.
+    const behalten=Object.create(null);
+    zurueck.forEach(d=>{ behalten[d.code]=1; });
+    const zuviel=jetzt.filter(d=>!behalten[d.code]);
+    for(const d of zuviel) await daten.loescheBuchung(ziel, d.code);
+    await daten.schreibeBuchungen(ziel, zurueck);
     if(alt.einstellungen) { await daten.speichereEinstellungen(alt.einstellungen);
                             uebernimmEinstellungen(alt.einstellungen); }
     if(ziel!==objektId) return;
@@ -595,7 +627,10 @@ $('standZurueck').onclick=async()=>{
     await ladeBestand();
     await fuelleStaende();
     $('paidInfo').textContent='Stand vom '+z.slice(0,16)+' zurückgespielt · '
-      +(alt.buchungen||[]).length+' Buchungen · der vorherige Bestand wurde gesichert';
+      +zurueck.length+' Buchung'+(zurueck.length===1?'':'en')
+      +(zuviel.length?' · '+zuviel.length+' später hinzugekommene entfernt ('
+        +zuviel.map(d=>d.code).slice(0,5).join(', ')+')':'')
+      +' · der vorherige Bestand wurde gesichert';
     $('paidInfo').classList.remove('hide');
   }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
 };

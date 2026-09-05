@@ -102,6 +102,62 @@ t('HM3 wieder auf 100', (await db()).buchungen[obj].HM3.auszahlung, 100);
 t('vorheriger Bestand gesichert',
   Object.values((await db()).schnappschuesse[obj]).some(x => x.grund === 'wiederherstellung'), true);
 
+console.log('\nZurückspielen entfernt später hinzugekommene Buchungen');
+await lade(KOPF + 'HM4;Bestätigt;Emil;05.12.2026;06.12.2026;100,00;\n');
+await seite.waitForTimeout(900);
+const vorZusatz = Object.keys((await db()).buchungen[obj]).length;
+await lade(KOPF + 'HM4;Bestätigt;Emil;05.12.2026;06.12.2026;100,00;\n'
+                + 'HM5;Bestätigt;Frida;10.12.2026;11.12.2026;100,00;\n');
+await seite.waitForTimeout(900);
+t('HM5 zusätzlich importiert', !!(await db()).buchungen[obj].HM5, true);
+await seite.selectOption('#stand', {index: 1});
+await seite.click('#standZurueck');
+await seite.waitForTimeout(1400);
+t('HM5 wieder entfernt', !!(await db()).buchungen[obj].HM5, false);
+t('Bestandsgröße wie vor dem Fehlimport', Object.keys((await db()).buchungen[obj]).length, vorZusatz);
+
+console.log('\nNachgeladene Gastbeträge werden gespeichert');
+await lade(KOPF + 'HM6;Bestätigt;Gita;05.01.2027;06.01.2027;100,00;\n');
+await seite.waitForTimeout(900);
+t('HM6 ohne Gastbetrag', (await db()).buchungen[obj].HM6.gastbetrag, null);
+await seite.setInputFiles('#paidFile', {name:'g.csv', mimeType:'text/csv',
+  buffer: Buffer.from('Bestätigungs-Code;Vom Gast bezahlt\nHM6;175,00\n','utf8')});
+await seite.waitForTimeout(2400);
+t('Gastbetrag aus der Datei gespeichert', (await db()).buchungen[obj].HM6.gastbetrag, 175);
+
+console.log('\nGeleertes Feld hebt die Überschreibung auf');
+/* Nach dem ersten Speichern ist die Datenbank die Quelle, nicht mehr die CSV.
+   Das Leeren gibt deshalb den gespeicherten Wert frei — nicht den, der in der
+   ursprünglich geladenen Datei stand. Der Konflikthinweis erscheint auch nur,
+   solange beide auseinandergehen, also im CSV-Betrieb vor dem ersten Speichern. */
+await lade(KOPF + 'HM7;Bestätigt;Hans;05.02.2027;06.02.2027;100,00;150,00\n');
+await seite.waitForTimeout(900);
+t('Dateiwert übernommen', (await db()).buchungen[obj].HM7.gastbetrag, 150);
+t('gilt als aus der Datei', (await db()).buchungen[obj].HM7.gastbetragQuelle, 'datei');
+await seite.fill('.paid-in[data-key="HM7"]', '120,00');
+await seite.waitForTimeout(2200);
+t('manueller Wert gewinnt', (await db()).buchungen[obj].HM7.gastbetrag, 120);
+t('und gilt als manuell', (await db()).buchungen[obj].HM7.gastbetragQuelle, 'manuell');
+await seite.fill('.paid-in[data-key="HM7"]', '');
+await seite.waitForTimeout(2200);
+t('nach dem Leeren gilt wieder der Bestand', (await db()).buchungen[obj].HM7.gastbetrag, 120);
+t('und wieder als aus der Quelle', (await db()).buchungen[obj].HM7.gastbetragQuelle, 'datei');
+/* Und der Fall aus Befund 4: im CSV-Betrieb muss ein geleertes Feld den
+   Dateiwert wieder freigeben. Frische Seite, damit die Datei die Quelle ist. */
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HM8;Bestätigt;Ida;05.03.2027;06.03.2027;100,00;150,00\n');
+await seite.waitForSelector('#out:not(.hide)');
+await seite.fill('.paid-in[data-key="HM8"]', '120,00');
+await seite.waitForTimeout(400);
+t('CSV-Betrieb: manueller Wert im Feld',
+  await seite.inputValue('.paid-in[data-key="HM8"]'), '120,00');
+t('Konflikt wird gemeldet', /die Datei nennt/.test(await seite.textContent('#warnings')), true);
+await seite.fill('.paid-in[data-key="HM8"]', '');
+await seite.waitForTimeout(400);
+t('nach dem Leeren steht der Dateiwert im Feld',
+  await seite.inputValue('.paid-in[data-key="HM8"]'), '150,00');
+
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
 console.log('\n' + gut + ' bestanden · ' + schlecht + ' fehlgeschlagen');
