@@ -538,6 +538,7 @@ async function speichereImport(dateiname, text){
     // Bliebe es stehen, verdeckte es beim nächsten Import die neuen Dateiwerte.
     for(const k in paidRaw) delete paidRaw[k];
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
+    ungespeichert=false;
     run();
 
     const info=$('paidInfo'), teile=[];
@@ -587,6 +588,11 @@ function speichereEingabe(){
       await daten.speichereEinstellungen(opt);
       if(ziel!==objektId) return;
       wolkeBestand=docs;
+      // Der Punkt auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim
+      // Schließen bedeuten „steht nur im Arbeitsspeicher“. Sobald die Datenbank
+      // den Wert hat, stimmt das nicht mehr — sonst warnt der Browser vor
+      // Datenverlust, der keiner ist, und der Punkt wird bedeutungslos.
+      ungespeichert=false; markiereSpeicherstand();
       stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
       fuelleStaende();
     }catch(ex){ stand('Nicht gespeichert: '+ex.message, true); }

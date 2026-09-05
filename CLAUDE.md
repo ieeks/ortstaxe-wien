@@ -181,6 +181,12 @@ Schreibfehler ein Mischbestand zurück, aus dem schon gelöscht, aber noch nicht
 wiederhergestellt wurde. Über 400 Vorgänge ist das nicht mehr unteilbar; der
 Hinweis sagt das dann ausdrücklich.
 
+**Der Marker auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim Schließen
+bedeuten „steht nur im Arbeitsspeicher“.** Ein erfolgreiches Speichern in die
+Datenbank setzt beide zurück — sonst warnt der Browser vor einem Datenverlust,
+den es nicht gibt, und der Punkt wird bedeutungslos. Ohne Anmeldung bleibt es
+beim alten Verhalten: erst der CSV-Export löscht ihn.
+
 **`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der
 Datenbank vor, ist er bereits der Speicher — die Werte zusätzlich in `paidRaw`
 zu halten ließe sie jede später geladene Datei verdecken, und eine korrigierte

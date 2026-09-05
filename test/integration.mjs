@@ -67,6 +67,10 @@ await seite.fill('.paid-in[data-key="HM1"]', '150,00');
 await seite.waitForTimeout(2200);                       // Entprellung
 t('nach dem Tippen in der Datenbank', (await db()).buchungen[obj].HM1.gastbetrag, 150);
 t('Herkunft ist „manuell“',            (await db()).buchungen[obj].HM1.gastbetragQuelle, 'manuell');
+/* Der Punkt auf dem CSV-Knopf und die Schließen-Warnung heißen „nur im
+   Arbeitsspeicher“. Nach dem Wolken-Speichern stimmt das nicht mehr. */
+t('CSV-Marker ist danach aus',
+  await seite.$eval('#dlPaid', n => n.classList.contains('offen')), false);
 
 console.log('\nStornierungen erreichen den Bestand');
 await lade(KOPF + 'HM1;Cancelled;Anna;05.08.2026;06.08.2026;100,00;\n');
