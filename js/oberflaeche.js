@@ -18,7 +18,11 @@ import {
   monatsSummen,
   baueCsvMonate,
   baueCsvBuchungen,
-  baueCsvGastbetraege
+  baueCsvGastbetraege,
+  alsCsvZeilen,
+  alsBuchungsdokument,
+  verschmelzeBuchungen,
+  textHash
 } from './kern.js';
 
 /* Was in der Buchungstabelle eingetippt wurde, Code → Rohtext. Bewusst nur im
@@ -190,6 +194,9 @@ function render(res, opt){
 
 /* --- Steuerung --- */
 let lastText=null;
+/* Buchungsdokumente aus Firestore, sobald angemeldet und ein Objekt gewählt
+   ist. null heißt: es wird wie bisher aus der CSV gerechnet. */
+let wolkeBestand=null;
 /* Getipptes lebt nur in dieser Sitzung. Wer die Seite verlässt, ohne zu
    exportieren, verliert es — deshalb ein sichtbarer Marker und die Rückfrage
    des Browsers. */
@@ -201,22 +208,35 @@ window.addEventListener('beforeunload', e=>{
   if(!ungespeichert) return;
   e.preventDefault(); e.returnValue='';
 });
+/* Woraus gerechnet wird. Liegt ein Bestand aus der Datenbank vor, hat er
+   Vorrang; sonst die zuletzt geladene CSV. In beiden Fällen geht es durch
+   dieselbe Tabelle in compute() — es gibt keinen zweiten Rechenweg. */
+/* Die Optionen aus den Feldern. Als eigene Funktion, damit der Import in die
+   Datenbank mit genau denselben Werten rechnet wie die Anzeige. */
+function optionen(){
+  return {basis:document.getElementById('basis').value,
+          fee:((parseFloat(document.getElementById('fee').value)||0)
+               * (document.getElementById('uid').value==='ja' ? 1 : 1.2)),
+          gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
+          uid:document.getElementById('uid').value,
+          zaehl:document.getElementById('zaehl').value,
+          konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
+          // Rohtext durchreichen: compute() prueft ihn selbst und kann so
+          // einen unlesbaren Eintrag melden statt ihn still als 0 zu lesen.
+          paid:paidRaw};
+}
+
+function aktuelleZeilen(){
+  if(wolkeBestand) return alsCsvZeilen(wolkeBestand);
+  return lastText ? parseCSV(lastText) : null;
+}
 function run(){
-  if(!lastText) return;
+  if(!lastText && !wolkeBestand) return;
   const err=document.getElementById('error');
   try{
     err.classList.add('hide');
-    const opt={basis:document.getElementById('basis').value,
-               fee:((parseFloat(document.getElementById('fee').value)||0)
-                    * (document.getElementById('uid').value==='ja' ? 1 : 1.2)),
-               gastfee:(parseFloat(document.getElementById('gastfee').value)||0),
-               uid:document.getElementById('uid').value,
-               zaehl:document.getElementById('zaehl').value,
-               konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
-               // Rohtext durchreichen: compute() prueft ihn selbst und kann so
-               // einen unlesbaren Eintrag melden statt ihn still als 0 zu lesen.
-               paid:paidRaw};
-    const res=compute(parseCSV(lastText),opt);
+    const opt=optionen();
+    const res=compute(aktuelleZeilen(),opt);
     merkeGastbetraege(res.bookings, paidRaw);
     render(res,opt);
   }catch(e){
@@ -233,7 +253,14 @@ function load(f){
   // Code sind mit „#“ geschlüsselt und werden hier verworfen: sie würden sonst
   // auf der Buchung landen, die in der neuen Datei zufällig dieselbe Zeile hat.
   for(const k in paidRaw) if(k.charAt(0)==='#') delete paidRaw[k];
-  const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8');
+  const r=new FileReader();
+  r.onload=()=>{
+    lastText=r.result;
+    wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
+    run();
+    if(daten && konto && objektId) speichereImport(f.name, r.result);
+  };
+  r.readAsText(f,'utf-8');
 }
 
 const drop=document.getElementById('drop'), file=document.getElementById('file');
@@ -310,6 +337,144 @@ function ladeGastbetraege(f){
   };
   r.readAsText(f,'utf-8');
 }
+
+/* --- Synchronisierung ----------------------------------------------------
+   Streng additiv: ohne Anmeldung, ohne Netz oder bei einem SDK-Fehler
+   verhält sich das Werkzeug exakt wie vorher — CSV laden, rechnen, fertig.
+   Nichts hier darf den Rechenweg beeinflussen. */
+
+let daten=null, konto=null, objektId=null, objekte=[];
+const $=id=>document.getElementById(id);
+
+function stand(text, offen){
+  const el=$('wolkeStand');
+  el.textContent=text||'';
+  el.classList.toggle('offen', !!offen);
+}
+
+function zeichneLeiste(){
+  const an=!!konto;
+  $('anmelden').classList.toggle('hide', an);
+  $('abmelden').classList.toggle('hide', !an);
+  $('wer').classList.toggle('hide', !an);
+  $('objektWahl').classList.toggle('hide', !an);
+  $('objektNeu').classList.toggle('hide', !an);
+  $('wer').textContent = an ? konto.name : '';
+}
+
+function fuelleObjekte(){
+  const sel=$('objekt');
+  sel.innerHTML=objekte.map(o=>'<option value="'+esc(o.id)+'"'
+    +(o.id===objektId?' selected':'')+'>'+esc(o.name||o.id)+'</option>').join('');
+}
+
+/* Der gespeicherte Bestand wird zur Rechengrundlage. Ist nichts gespeichert,
+   bleibt es beim CSV-Weg — wolkeBestand null heißt genau das. */
+async function ladeBestand(){
+  stand('lädt …');
+  const docs=await daten.ladeBuchungen(objektId);
+  wolkeBestand = docs.length ? docs : null;
+  run();
+  stand(docs.length ? docs.length+' Buchungen aus der Datenbank' : 'noch nichts gespeichert');
+}
+
+async function nachAnmeldung(){
+  try{
+    stand('lädt …');
+    objekte = await daten.ladeObjekte();
+    if(!objekte.length){
+      const id='objekt-'+Date.now().toString(36);
+      await daten.speichereObjekt(id,{name:'Wohnung', konto:$('konto').value});
+      objekte=[{id:id, name:'Wohnung'}];
+    }
+    objektId = objekte[0].id;
+    fuelleObjekte();
+    const e = await daten.ladeEinstellungen();
+    if(e) uebernimmEinstellungen(e);
+    await ladeBestand();
+  }catch(ex){ stand('Fehler: '+ex.message, true); }
+}
+
+/* Gespeicherte Einstellungen zurück in die Felder. Bewusst ohne konto: das
+   hängt am Objekt, nicht am Konto der angemeldeten Person. */
+function uebernimmEinstellungen(e){
+  if(e.basis)   $('basis').value=e.basis;
+  if(e.uid)     $('uid').value=e.uid;
+  if(e.zaehl)   $('zaehl').value=e.zaehl;
+  if(typeof e.gastfee==='number') $('gastfee').value=e.gastfee;
+  // fee ist der wirksame Wert inklusive USt-Aufschlag; zurück auf den
+  // eingetippten Grundsatz rechnen, sonst wächst er bei jedem Laden.
+  if(typeof e.fee==='number')
+    $('fee').value = +(e.fee / (e.uid==='ja' ? 1 : 1.2)).toFixed(2);
+}
+
+/* Nach einem CSV-Import: Schnappschuss, zusammenführen, schreiben. Der
+   Schnappschuss kommt zuerst — sonst schützt er nicht vor genau dem Import,
+   der ihn nötig macht. */
+async function speichereImport(dateiname, text){
+  try{
+    stand('speichert …');
+    const opt=optionen();
+    const res=compute(parseCSV(text),opt);
+    const neu=res.bookings.filter(b=>b.stabil).map(b=>alsBuchungsdokument(b,objektId));
+    const uebersprungen=res.bookings.length-neu.length;
+    const gespeichert=await daten.ladeBuchungen(objektId);
+    if(gespeichert.length)
+      await daten.legeSchnappschussAn(objektId, gespeichert, opt,
+        {grund:'import', datei:dateiname, hash:textHash(text)});
+    const vm=verschmelzeBuchungen(gespeichert, neu);
+    await daten.schreibeBuchungen(objektId, vm.schreiben);
+    await daten.speichereEinstellungen(opt);
+    wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
+    run();
+
+    const info=$('paidInfo'), teile=[];
+    teile.push(vm.schreiben.length+' Buchung'+(vm.schreiben.length===1?'':'en')+' gespeichert');
+    if(vm.unberuehrt.length) teile.push(vm.unberuehrt.length+' aus früheren Importen unberührt');
+    if(uebersprungen) teile.push(uebersprungen+' ohne Bestätigungs-Code nicht gespeichert');
+    if(vm.konflikte.length)
+      teile.push('Achtung: '+vm.konflikte.length+' von Hand gesetzte Gastbeträge wurden von der '
+        +'Datei überschrieben ('+vm.konflikte.map(k=>k.code+': '+fmt(k.alt)+' → '+fmt(k.neu)).join(', ')+')');
+    info.textContent=teile.join(' · ');
+    info.classList.remove('hide');
+    stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+  }catch(ex){
+    stand('Nicht gespeichert: '+ex.message, true);
+  }
+}
+
+$('anmelden').onclick=async()=>{
+  try{ stand('meldet an …'); await daten.anmelden(); }
+  catch(ex){ stand(ex.message, true); }
+};
+$('abmelden').onclick=async()=>{
+  try{ await daten.abmelden(); wolkeBestand=null; objektId=null; objekte=[]; stand(''); }
+  catch(ex){ stand(ex.message, true); }
+};
+$('objekt').onchange=async()=>{ objektId=$('objekt').value; await ladeBestand(); };
+$('objektNeu').onclick=async()=>{
+  const name=prompt('Name des neuen Objekts:');
+  if(!name) return;
+  try{
+    const id='objekt-'+Date.now().toString(36);
+    await daten.speichereObjekt(id,{name:name, konto:$('konto').value});
+    objekte.push({id:id, name:name}); objektId=id;
+    fuelleObjekte(); await ladeBestand();
+  }catch(ex){ stand(ex.message, true); }
+};
+
+/* Beim Start einmal versuchen. Klappt es nicht, bleibt die Leiste verborgen
+   und das Werkzeug ist genau das, was es vorher war. */
+(async function(){
+  try{
+    daten = await import('./daten.js');
+    await daten.beobachteAnmeldung(p=>{
+      konto=p; zeichneLeiste();
+      if(p) nachAnmeldung(); else { wolkeBestand=null; run(); }
+    });
+    $('wolke').classList.remove('hide');
+  }catch(e){ /* still: ohne Datenbank rechnet das Werkzeug vollständig */ }
+})();
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Die Prüfungen liegen in selftest.js und werden nur bei Bedarf nachgeladen.

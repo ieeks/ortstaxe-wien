@@ -116,8 +116,21 @@ Zusammensetzen zurück.
 `firestore.rules` sind **noch nicht gegen den Emulator geprüft**. Vor dem ersten
 echten Einsatz: `firebase emulators:start --only firestore`.
 
-Was noch fehlt: das Firebase-Projekt selbst (Console), `.firebaserc`, die
-Anmeldung und `js/daten.js` mit dem eigentlichen Lesen und Schreiben.
+Beim Import wird zusammengeführt, **nie ersetzt**: ein Export über einen einzelnen
+Monat darf den Rest des Jahres nicht löschen. Ein von Hand gesetzter Gastbetrag
+überlebt einen Import, der an dieser Stelle nichts mitbringt — im rohen
+Airbnb-Export gibt es die Spalte gar nicht. Siehe `verschmelzeBuchungen`.
+
+Die ganze Schicht ist additiv: ohne Anmeldung, ohne Netz oder bei einem
+SDK-Fehler verhält sich das Werkzeug genau wie vorher. `js/daten.js` ist die
+einzige Stelle, die mit Firebase spricht, und rechnet nichts.
+
+**Ungeprüft und vor dem ersten Einsatz zu prüfen:**
+
+- Die in `js/firebase-config.js` gepinnte SDK-Version. Sie ließ sich in der
+  Entwicklungsumgebung nicht abrufen (gstatic.com dort gesperrt).
+- `firestore.rules` gegen den Emulator: `firebase emulators:start --only firestore`
+- Der gesamte Anmelde- und Speicherweg gegen das echte Projekt.
 
 ## Offene Punkte
 
