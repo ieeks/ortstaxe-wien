@@ -42,7 +42,8 @@ const browser = await chromium.launch(exe ? {executablePath: exe} : {});
 const seite = await browser.newPage();
 const fehler = [];
 seite.on('pageerror', e => fehler.push(e.message));
-seite.on('dialog', d => d.accept());
+// prompt() ohne Text bestätigen hieße „kein Name“ — das Objekt entstünde nicht.
+seite.on('dialog', d => d.accept(d.type() === 'prompt' ? 'Zweitwohnung' : ''));
 
 let gut = 0, schlecht = 0;
 const t = (name, ist, soll) => {
@@ -157,6 +158,71 @@ await seite.fill('.paid-in[data-key="HM8"]', '');
 await seite.waitForTimeout(400);
 t('nach dem Leeren steht der Dateiwert im Feld',
   await seite.inputValue('.paid-in[data-key="HM8"]'), '150,00');
+
+console.log('\nAusstehendes Autospeichern hebt die Wiederherstellung nicht auf');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HA1;Bestätigt;Anna;05.04.2027;06.04.2027;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(800);
+const obj2 = Object.keys((await db()).buchungen)[0];
+await lade(KOPF + 'HA1;Bestätigt;Anna;05.04.2027;06.04.2027;100,00;\n'
+                + 'HA2;Bestätigt;Bert;10.04.2027;11.04.2027;100,00;\n');
+await seite.waitForTimeout(900);
+t('zwei Buchungen im Bestand', Object.keys((await db()).buchungen[obj2]).length, 2);
+/* Eingabe tippen, damit ein Speichervorgang aussteht — dann sofort zurückspielen. */
+await seite.fill('.paid-in[data-key="HA1"]', '150,00');
+await seite.waitForTimeout(200);                 // Timer läuft, aber noch nicht ab
+await seite.selectOption('#stand', {index: 1});
+await seite.click('#standZurueck');
+await seite.waitForTimeout(2600);                // alter Timer wäre längst abgelaufen
+t('HA2 bleibt entfernt', !!(await db()).buchungen[obj2].HA2, false);
+t('HA1 ohne den getippten Wert', (await db()).buchungen[obj2].HA1.gastbetrag, null);
+
+console.log('\nVerspätete Ladeantwort landet nicht im falschen Objekt');
+await seite.evaluate(() => { window.__ladeVerzug = {}; });
+await seite.click('#objektNeu');                 // Dialog wird automatisch bestätigt
+await seite.waitForTimeout(900);
+const objekte = await seite.$$eval('#objekt option', o => o.map(x => x.value));
+t('zwei Objekte vorhanden', objekte.length >= 2, true);
+if (objekte.length < 2) { console.log('  (Objektwechsel-Proben übersprungen)'); }
+else {
+await seite.evaluate(ids => { window.__ladeVerzug = {[ids[0]]: 900}; }, objekte);
+await seite.selectOption('#objekt', objekte[0]);   // langsames Objekt
+await seite.waitForTimeout(50);
+await seite.selectOption('#objekt', objekte[1]);   // sofort weiter zum schnellen
+await seite.waitForTimeout(1600);                  // verspätete Antwort trifft ein
+t('Wähler steht auf dem zweiten Objekt', await seite.inputValue('#objekt'), objekte[1]);
+const gezeigt = await seite.$$eval('#rows tr td:first-child', c => c.map(x => x.textContent.trim()));
+t('kein Bestand des ersten Objekts angezeigt', gezeigt.some(c => /^HA/.test(c)), false);
+t('leeres Objekt zeigt keine fremde Tabelle', await seite.isVisible('#months'), false);
+
+console.log('\nWiederherstellung ist unteilbar');
+await seite.evaluate(() => { window.__fehlerBeimSchreiben = true; });
+await seite.selectOption('#objekt', objekte[0]);
+await seite.waitForTimeout(1400);
+const vorher = Object.keys((await db()).buchungen[objekte[0]] || {}).length;
+if (await seite.isVisible('#standZurueck')) {
+  await seite.selectOption('#stand', {index: 1});
+  await seite.click('#standZurueck');
+  await seite.waitForTimeout(1200);
+  t('bei Schreibfehler bleibt der Bestand unangetastet',
+    Object.keys((await db()).buchungen[objekte[0]] || {}).length, vorher);
+  t('und der Fehler wird angezeigt', /Nicht zurückgespielt/.test(await seite.textContent('#wolkeStand')), true);
+}
+await seite.evaluate(() => { window.__fehlerBeimSchreiben = false; });
+}
+
+console.log('\nKorrigierte CSV kommt auch im Wolken-Betrieb durch');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HK1;Bestätigt;Kim;05.05.2027;06.05.2027;100,00;120,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const standK = (await db()).buchungen;
+const objK = Object.keys(standK).filter(o => standK[o].HK1)[0];
+t('erst 120 gespeichert', standK[objK].HK1.gastbetrag, 120);
+await lade(KOPF + 'HK1;Bestätigt;Kim;05.05.2027;06.05.2027;100,00;150,00\n');
+await seite.waitForTimeout(1200);
+t('korrigierte 150 kommen an', (await db()).buchungen[objK].HK1.gastbetrag, 150);
 
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;

@@ -133,6 +133,28 @@ export async function schreibeBuchungen(objektId, dokumente){
   return dokumente.length;
 }
 
+/* Löschen und Schreiben in einem Stapel. Firestore wendet einen writeBatch
+   ganz oder gar nicht an — ohne das hinterlässt eine fehlgeschlagene
+   Wiederherstellung einen Mischbestand: das Löschen war schon durch, das
+   Zurückschreiben nicht. Über 400 Vorgänge wird gestapelt statt atomar; das
+   ist erst bei Beständen jenseits eines Jahres relevant und wird gemeldet. */
+export async function ersetzeBuchungen(objektId, dokumente, zuLoeschen){
+  await start();
+  const {f} = teile;
+  const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
+  const gesamt = dokumente.length + zuLoeschen.length;
+  if(gesamt<=400){
+    const stapel = f.writeBatch(db);
+    zuLoeschen.forEach(c => stapel.delete(f.doc(basis, String(c))));
+    dokumente.forEach(d => stapel.set(f.doc(basis, String(d.code)), d));
+    await stapel.commit();
+    return {atomar:true, anzahl:gesamt};
+  }
+  for(const c of zuLoeschen) await f.deleteDoc(f.doc(basis, String(c)));
+  await schreibeBuchungen(objektId, dokumente);
+  return {atomar:false, anzahl:gesamt};
+}
+
 export async function loescheBuchung(objektId, code){
   await start();
   const {f} = teile;

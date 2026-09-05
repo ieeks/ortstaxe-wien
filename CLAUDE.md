@@ -165,7 +165,26 @@ zusätzlicher Zeilen nicht rückgängig machen.
 
 **Jeder verzögerte Schreibvorgang hält sein Ziel und seine Daten beim Auslösen
 fest**, nicht erst beim Ausführen. Sonst landet nach einem Objektwechsel der
-Bestand von Wohnung A unter Wohnung B.
+Bestand von Wohnung A unter Wohnung B. Aus demselben Grund bekommt jede
+Ladeanfrage eine Nummer: eine überholte oder zu einem gewechselten Objekt
+gehörende Antwort wird verworfen, statt in `wolkeBestand` zu landen.
+
+**Ein Objektwechsel räumt alles Objektgebundene weg** — ausstehende Timer, die
+geladene CSV, `paidRaw` und die Anzeige. Sonst zeigt ein leeres zweites Objekt
+die Buchungen des ersten.
+
+**Vor dem Zurückspielen wird der Speichertimer verworfen.** Er gehört zum
+verworfenen Stand; liefe er danach ab, schriebe er die alten Daten wieder hinein
+und machte die Wiederherstellung rückgängig. Löschen und Zurückschreiben laufen
+über `ersetzeBuchungen` als ein Firestore-Batch — sonst bleibt bei einem
+Schreibfehler ein Mischbestand zurück, aus dem schon gelöscht, aber noch nichts
+wiederhergestellt wurde. Über 400 Vorgänge ist das nicht mehr unteilbar; der
+Hinweis sagt das dann ausdrücklich.
+
+**`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der
+Datenbank vor, ist er bereits der Speicher — die Werte zusätzlich in `paidRaw`
+zu halten ließe sie jede später geladene Datei verdecken, und eine korrigierte
+CSV käme nie durch.
 
 **Ungeprüft und vor dem ersten Einsatz zu prüfen:**
 
