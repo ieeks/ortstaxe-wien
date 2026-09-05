@@ -455,6 +455,80 @@ if(location.search.indexOf('selftest')>=0){
   t('Identität','flüchtiger Schlüssel überlebt load() nicht', nachLoad['#zeile2'], undefined);
   t('Identität','echter Code überlebt load()', nachLoad['HM1'], '200,00');
 
+  /* Geldbeträge streng lesen (F01). Der frühere Parser strich alles
+     Nicht-Numerische weg und machte aus '100abc200' die Zahl 100200. */
+  const geld=(s,feld)=>leseGeld(s)[feld||'wert'];
+  t('Geld','deutsches Format', geld('1.644,80'), 1644.8);
+  t('Geld','englisches Format', geld('1,644.80'), 1644.8);
+  t('Geld','ohne Trenner', geld('100'), 100);
+  t('Geld','zwei Tausendergruppen', geld('1.234.567,89'), 1234567.89);
+  t('Geld','Währungszeichen und Leerzeichen', geld('€ 1.644,80'), 1644.8);
+  t('Geld','Klammern sind negativ', geld('(100,00)'), -100);
+  t('Geld','Minuszeichen', geld('-50,00'), -50);
+  t('Geld','leere Zelle meldet leer', geld('', 'status'), 'leer');
+  t('Geld','Buchstaben im Betrag sind ungültig', geld('100abc200','status'), 'ungueltig');
+  t('Geld','Buchstaben ergeben keinen Wert', geld('100abc200'), 0);
+  t('Geld','mehrere Dezimalzeichen sind ungültig', geld('1,2,3','status'), 'ungueltig');
+  t('Geld','fremde Währung ist ungültig', geld('USD 100.00','status'), 'ungueltig');
+  t('Geld','doppeltes Vorzeichen ist ungültig', geld('--5','status'), 'ungueltig');
+  t('Geld','1.234 ist mehrdeutig', geld('1.234','status'), 'mehrdeutig');
+  t('Geld','1,234 ist mehrdeutig', geld('1,234','status'), 'mehrdeutig');
+  t('Geld','1.23456 ist eindeutig', geld('1.23456','status'), 'ok');
+  t('Geld','unlesbarer Betrag warnt',
+    csv('T;;G;05.08.2026;06.08.2026;;100abc200').warn.some(w=>/kein lesbarer Geldwert/.test(w)), true);
+  t('Geld','mehrdeutiger Betrag warnt',
+    csv('T;;G;05.08.2026;06.08.2026;;1.234').warn.some(w=>/mehrdeutig/.test(w)), true);
+  t('Geld','sauberer Betrag warnt nicht',
+    csv('T;;G;05.08.2026;06.08.2026;;1.644,80').warn.length, 0);
+  t('Geld','unlesbarer Gastbetrag warnt',
+    compute(parseCSV(HEAD+';Vom Gast bezahlt\nT;;G;05.08.2026;06.08.2026;;100;xyz'),BASE)
+      .warn.some(w=>/Vom Gast bezahlt/.test(w)), true);
+
+  /* Gebühren validieren (F04). Wirksame 100 % ergaben Infinity und die
+     Tabelle zeigte stumm „∞“ — die min/max der Felder prüft niemand nach. */
+  const wirft=o=>{ try{ compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;100'),
+                                Object.assign({},BASE,o)); return false; }catch(e){ return true; } };
+  t('Gebühren','wirksame 100 % werden abgelehnt', wirft({fee:100}), true);
+  t('Gebühren','über 100 % werden abgelehnt', wirft({fee:120}), true);
+  t('Gebühren','negative Gebühr wird abgelehnt', wirft({fee:-5}), true);
+  t('Gebühren','unlesbare Gebühr wird abgelehnt', wirft({fee:NaN}), true);
+  t('Gebühren','99,9 % bleiben zulässig', wirft({fee:99.9}), false);
+  t('Gebühren','Gastgebühr 100 % wird abgelehnt', wirft({gastfee:100}), true);
+  t('Gebühren','negative Gastgebühr wird abgelehnt', wirft({gastfee:-1}), true);
+  t('Gebühren','Ergebnis bleibt endlich', Number.isFinite(
+    compute(parseCSV(HEAD+'\nT;;G;05.08.2026;06.08.2026;;100'),
+            Object.assign({},BASE,{fee:99.9})).bookings[0].tax), true);
+
+  /* Einnahmen-Export erkennen (F05) — vorher nur auf Deutsch */
+  const ablehnung=kopf=>{ try{ compute(parseCSV(kopf+'\nx;HM1;G;05.08.2026;06.08.2026;100;90;R1'),BASE);
+                               return false; }catch(e){ return /Einnahmen-Export/.test(e.message); } };
+  t('Einnahmen-Export','deutscher Transaktionsexport wird abgelehnt',
+    ablehnung('Typ;Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Bruttoeinkünfte;Ausgezahlt;Referenzcode'), true);
+  t('Einnahmen-Export','englischer Transaktionsexport wird abgelehnt',
+    ablehnung('Type;Confirmation code;Guest name;Start date;End date;Gross earnings;Paid out;Reference code'), true);
+  t('Einnahmen-Export','Reservierung mit Spalte „Inseratstyp“ läuft durch',
+    compute(parseCSV('Bestätigungs-Code;Status;Name des Gastes;Inseratstyp;Startdatum;Enddatum;Einkünfte'
+      +'\nT;;G;Wohnung;05.08.2026;06.08.2026;100'),BASE).bookings.length, 1);
+  t('Einnahmen-Export','findCol exakt ignoriert Teiltreffer',
+    findCol(['Inseratstyp'],['Typ','Type'],true), -1);
+  t('Einnahmen-Export','findCol ohne exakt trifft den Teilstring',
+    findCol(['Inseratstyp'],['Typ','Type']), 0);
+
+  /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
+  const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',
+                 'C;;G;01.10.2026;02.10.2026;;100');
+  const fuss=monatsSummen(abst.months).base;   // die echte Fußzeile, nicht nachgebaut
+  /* Verglichen wird auf Cent-Ebene: beide Seiten summieren bereits gerundete
+     Werte, die Float-Reste (285,71999…) sind in der Anzeige nicht sichtbar. */
+  t('Abstimmung','Monatszeilen zeigen je 95,24', abst.months.map(m=>fmt(m.base)).join('+'), '95,24+95,24+95,24');
+  t('Abstimmung','Fußzeile = Summe der angezeigten Monatszeilen', fmt(fuss), '285,72');
+  t('Abstimmung','Jahresgrundlage = Fußzeile', fmt(jahressummen(abst.months)[0].base), fmt(fuss));
+  t('Abstimmung','ein Meldemonat trägt genau einen Satz',
+    abst.months.length, new Set(abst.months.map(m=>m.month)).size);
+  t('Abstimmung','Fußzeile zählt alle Nächte', monatsSummen(abst.months).nights, 3);
+  t('Abstimmung','Fußzeilen-Ortstaxe = Summe der Monatsbeträge',
+    fmt(round2(monatsSummen(abst.months).tax)), fmt(round2(abst.months.reduce((s,m)=>s+round2(m.tax),0))));
+
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
   const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};

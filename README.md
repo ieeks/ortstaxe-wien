@@ -36,11 +36,12 @@ die Befreiung geltend macht, hat die maßgeblichen Umstände nachzuweisen.
 
 ## Selbsttest
 
-`index.html?selftest` rechnet 193 Prüfungen gegen dieselben Funktionen, die auch die
-Meldung erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem
-amtlichen Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der
-Monatsenden nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter und CSV-Parsing.
-Kein Build-Schritt, keine zweite Datei.
+`index.html?selftest` rechnet gegen dieselben Funktionen, die auch die Meldung
+erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem amtlichen
+Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der Monatsenden
+nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter, Betragsprüfung, Gebührengrenzen,
+CSV-Parsing und den Rundlauf Export → Import. Die Anzahl der Prüfungen nennt die
+Seite selbst; sie wird hier bewusst nicht doppelt gepflegt. Kein Build-Schritt.
 
 Vor jeder Änderung an der Rechnung einmal aufrufen; **„0 fehlgeschlagen“ ist die
 Bedingung zum Commit.** Ein Testfall kann als bekannter, noch nicht behobener Bug

@@ -355,10 +355,11 @@ function parseCSV(text){
   if(cell.length||row.length){ row.push(cell); rows.push(row); }
   return rows.filter(r=>r.some(c=>c.trim()!==''));
 }
-function findCol(head, names){
+function findCol(head, names, exakt){
   const norm = s => s.toLowerCase().replace(/[^a-z0-9äöüß#]/g,'');
   const h = head.map(norm);
   for(const n of names){ const i=h.indexOf(norm(n)); if(i>=0) return i; }
+  if(exakt) return -1;   // kein Teilstring-Fallback: 'Type' darf nicht 'Inseratstyp' treffen
   for(const n of names){ const i=h.findIndex(x=>x.includes(norm(n))); if(i>=0) return i; }
   return -1;
 }
@@ -377,16 +378,54 @@ function parseDate(s){
   if(m) return +m[1]>12 ? mkDate(+m[3],+m[2],+m[1]) : mkDate(+m[3],+m[1],+m[2]);
   return NaN;
 }
-function parseMoney(s){
-  s=(s||'').replace(/[^\d,.\-]/g,'');
-  // Dezimaltrenner ist das zuletzt vorkommende Zeichen: 1.644,80 wie 1,644.80
-  const lc=s.lastIndexOf(','), lp=s.lastIndexOf('.');
-  if(lc>lp) s=s.replace(/\./g,'').replace(',','.');
-  else if(lc>=0) s=s.replace(/,/g,'');
-  else if((s.match(/\./g)||[]).length>1) s=s.replace(/\./g,'');
-  const v=parseFloat(s);
-  return isNaN(v)?0:v;
+/* Geldbetrag streng lesen. Rückgabe {wert,status} mit status
+   'leer' | 'ok' | 'mehrdeutig' | 'ungueltig'.
+   Der frühere tolerante Parser strich alles Nicht-Numerische weg und machte
+   damit aus '100abc200' die Zahl 100200 und aus '1,2,3' die Zahl 1,2 —
+   plausibel aussehende, aber grob falsche Beträge. Hier muss der ganze String
+   zu einem Zahlenformat passen, sonst ist er ungültig. */
+function leseGeld(roh){
+  let s=String(roh==null?'':roh).trim();
+  if(!s) return {wert:0,status:'leer'};
+  let neg=false;
+  const kl=s.match(/^\((.*)\)$/);            // Klammern sind ein negatives Vorzeichen
+  if(kl){ neg=true; s=kl[1].trim(); }
+  s=s.replace(/[€\s   ]/g,''); // Währungszeichen und Zwischenräume
+  if(/^[-+]/.test(s)){ if(s.charAt(0)==='-') neg=!neg; s=s.slice(1); }
+  if(!s||!/^[\d.,]+$/.test(s)) return {wert:0,status:'ungueltig'};
+
+  const kommas=(s.match(/,/g)||[]).length, punkte=(s.match(/\./g)||[]).length;
+  let wert, status='ok';
+
+  if(kommas&&punkte){
+    // Beide Zeichen da: das zuletzt stehende ist der Dezimaltrenner
+    const de = s.lastIndexOf(',')>s.lastIndexOf('.');
+    if(!(de?/^\d{1,3}(?:\.\d{3})+,\d+$/:/^\d{1,3}(?:,\d{3})+\.\d+$/).test(s))
+      return {wert:0,status:'ungueltig'};
+    wert=parseFloat(de ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''));
+  } else if(!kommas&&!punkte){
+    wert=parseFloat(s);
+  } else {
+    const tr=kommas?',':'.', teile=s.split(tr);
+    if(teile.some(x=>!/^\d+$/.test(x))) return {wert:0,status:'ungueltig'};
+    if(teile.length>2){
+      // Mehrfach derselbe Trenner kann nur Tausendergruppierung sein
+      if(teile[0].length>3||teile.slice(1).some(x=>x.length!==3))
+        return {wert:0,status:'ungueltig'};
+      wert=parseFloat(teile.join(''));
+    } else {
+      // '1.234' bzw. '1,234': Tausendertrenner oder Dezimaltrenner? Aus dem
+      // Wert allein nicht entscheidbar — deshalb gemeldet statt stillschweigend
+      // interpretiert. Echte Airbnb-Beträge haben immer zwei Nachkommastellen.
+      if(teile[1].length===3&&teile[0].length<=3) status='mehrdeutig';
+      wert=parseFloat(teile[0]+'.'+teile[1]);
+    }
+  }
+  if(!isFinite(wert)) return {wert:0,status:'ungueltig'};
+  return {wert:neg?-wert:wert, status:status};
 }
+/* Bequemer Zugriff für Stellen, die nur die Zahl brauchen. */
+function parseMoney(s){ const g=leseGeld(s); return g.status==='ungueltig'?0:g.wert; }
 
 /* --- Berechnung --- */
 function compute(csvRows, opt){
@@ -410,8 +449,8 @@ function compute(csvRows, opt){
   // durch — mit falschen Zahlen: Auszahlungszeilen ohne Datum, Langzeit-
   // buchungen auf Monatsraten verteilt, und „Bruttoeinkünfte“ ist Auszahlung
   // plus Netto-Gastgebergebühr, nicht das Entgelt des Gastes.
-  if(findCol(head,['Typ','Type'])>=0 && (findCol(head,['Bruttoeinkünfte'])>=0
-      || findCol(head,['Ausgezahlt'])>=0 || findCol(head,['Referenzcode'])>=0))
+  if(findCol(head,['Typ','Type'],true)>=0 && (findCol(head,['Bruttoeinkünfte','Gross earnings'])>=0
+      || findCol(head,['Ausgezahlt','Paid out'])>=0 || findCol(head,['Referenzcode','Reference code'])>=0))
     throw new Error('Das sieht nach dem Einnahmen-Export aus (Transaktionsverlauf). '
       +'Gebraucht wird der Reservierungs-Export mit einer Zeile je Aufenthalt. '
       +'Der Einnahmen-Export listet Zahlungen statt Aufenthalte, verteilt lange '
@@ -429,6 +468,16 @@ function compute(csvRows, opt){
   // Nächten und 9,8 % bei 42. Aus der Auszahlung ist sie nicht herleitbar,
   // weil sie die Gastgeberseite nie berührt. Steht „Vom Gast bezahlt“ in der
   // CSV, wird sie je Buchung daraus bestimmt; sonst bleibt nur der Pauschalsatz.
+  // Ungueltige Gebuehren duerfen nicht bis in die Zahlen durchschlagen: bei
+  // wirksamen 100 % ergibt 1/(1-fee/100) Infinity, und die Tabelle zeigte stumm
+  // „∞“. Die min/max der Eingabefelder prueft zur Laufzeit niemand nach.
+  if(!(opt.fee>=0)||opt.fee>=100)
+    throw new Error('Die wirksame Gastgebergebühr muss zwischen 0 und unter 100 % liegen — aktuell '
+      +(isFinite(opt.fee)?fmt(opt.fee)+' %':'kein lesbarer Wert')+'. Ohne hinterlegte UID schlägt das '
+      +'Tool 20 % Umsatzsteuer auf die Gebühr auf, aus 3,0 % werden also 3,6 % wirksam.');
+  if(!(opt.gastfee>=0)||opt.gastfee>=100)
+    throw new Error('Die Gast-Servicegebühr muss zwischen 0 und unter 100 % liegen — aktuell '
+      +(isFinite(opt.gastfee)?fmt(opt.gastfee)+' %':'kein lesbarer Wert')+'.');
   const hostGross = 1/(1 - (opt.fee/100));
   const guestF    = 1 + (opt.gastfee/100);
   const USTF_SERVICE = 1.20;   // Airbnb verrechnet 20 % österreichische USt auf die Servicegebühr
@@ -450,12 +499,24 @@ function compute(csvRows, opt){
     if(!stabil) fluechtig++;
     const name=(ci.name>=0?row[ci.name]:'')||'';
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
-    const netPay=parseMoney(row[ci.amount]);   // Auszahlung, wie sie in der CSV steht
+    const gPay=leseGeld(row[ci.amount]);       // Auszahlung, wie sie in der CSV steht
+    if(gPay.status==='ungueltig')
+      warn.push(code+' ('+name+') — Betrag „'+(row[ci.amount]||'')+'“ ist kein lesbarer Geldwert. '
+        +'Wird mit 0 gerechnet — die Zeile gehört vor der Meldung geklärt.');
+    else if(gPay.status==='mehrdeutig')
+      warn.push(code+' ('+name+') — Betrag „'+(row[ci.amount]||'')+'“ ist mehrdeutig: ein Trennzeichen '
+        +'mit drei folgenden Ziffern kann Tausender- oder Dezimaltrenner sein. Gerechnet wird mit '
+        +fmt(gPay.wert)+' € — bitte gegen den Beleg prüfen.');
+    const netPay=gPay.wert;
     const basis=netPay*hostGross;
     // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
     // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
     const ov=opt.paid ? opt.paid[key] : undefined;
-    const paid=ov!==undefined ? ov : (ci.paid>=0 ? parseMoney(row[ci.paid]) : 0);
+    const gPaid=leseGeld(ov!==undefined ? ov : (ci.paid>=0 ? row[ci.paid] : ''));
+    if(gPaid.status==='ungueltig')
+      warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ist kein lesbarer Geldwert. '
+        +'Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
+    const paid=gPaid.wert;
     let amt;
     if(paid>0 && paid+0.005>=basis){
       amt = basis + (paid-basis)/USTF_SERVICE;   // Gast-Servicegebühr brutto → netto
@@ -669,6 +730,15 @@ function merkeGastbetraege(bookings, ziel){
    Bewusst reine Funktionen ohne DOM: render() haengt sie nur an window, der
    Selbsttest ruft dieselben Funktionen auf. Sonst prueft der Test den
    Serializer, waehrend der echte Export daran vorbeilaufen koennte. */
+/* Fußzeile der Monatstabelle. Summiert wird über dieselben gerundeten Werte,
+   die in den Zeilen darüber stehen — sonst zeigt die Summe 285,71, während die
+   Zeilen 285,72 ergeben. Bewusst außerhalb von render(), damit der Selbsttest
+   die echte Fußzeile prüft statt die Formel nachzubauen. */
+function monatsSummen(months){
+  return months.reduce((s,m)=>({nights:s.nights+m.nights, base:s.base+round2(m.base),
+                                tax:s.tax+round2(m.tax)}), {nights:0,base:0,tax:0});
+}
+
 function csvDatum(t){ return new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}); }
 
 function baueCsvMonate(res, konto){
@@ -706,19 +776,18 @@ function render(res, opt){
     +' · '+res.bookings.length+' Buchungen';
   const mt=document.getElementById('months');
   let h='<tr><th>Meldemonat</th><th>Satz</th><th class="num">Nächte</th><th class="num">Bemessungsgrundlage</th><th class="num">Ortstaxe</th></tr>';
-  let sb=0,st=0,sn=0;
   res.months.forEach(m=>{
-    // Summiert wird über die gerundeten Monatswerte — überwiesen wird pro Monat
-    // dieser Betrag, die Summe muss die Spalte darüber wiedergeben.
+    // Überwiesen wird pro Monat dieser gerundete Betrag; die Fußzeile summiert
+    // in monatsSummen() über genau dieselben Werte.
     const tr=round2(m.tax);
-    sb+=m.base; st+=tr; sn+=m.nights;
     h+='<tr><td class="mono">'+monthLabel(m.month)+'</td>'
       +'<td><span class="rate '+m.reg+'">'+pct(EFF[m.reg])+'</span></td>'
       +'<td class="num">'+m.nights+'</td>'
       +'<td class="num">'+fmt(m.base)+'</td>'
       +'<td class="num"><strong>'+fmt(tr)+'</strong></td></tr>';
   });
-  h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sn+'</td><td class="num">'+fmt(sb)+'</td><td class="num">'+fmt(round2(st))+'</td></tr>';
+  const sum=monatsSummen(res.months);
+  h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sum.nights+'</td><td class="num">'+fmt(sum.base)+'</td><td class="num">'+fmt(round2(sum.tax))+'</td></tr>';
   mt.innerHTML=h;
 
   const pt=document.getElementById('pays');
@@ -840,9 +909,9 @@ function run(){
                uid:document.getElementById('uid').value,
                zaehl:document.getElementById('zaehl').value,
                konto:(document.getElementById('konto').value||'').replace(/\s/g,''),
-               paid:(()=>{ const m=Object.create(null);
-                 for(const k in paidRaw) m[k]=parseMoney(paidRaw[k]);
-                 return m; })()};
+               // Rohtext durchreichen: compute() prueft ihn selbst und kann so
+               // einen unlesbaren Eintrag melden statt ihn still als 0 zu lesen.
+               paid:paidRaw};
     const res=compute(parseCSV(lastText),opt);
     merkeGastbetraege(res.bookings, paidRaw);
     render(res,opt);
