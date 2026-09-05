@@ -2,6 +2,30 @@
    Wird von index.html nur bei Bedarf nachgeladen. Läuft als klassisches
    Script im selben Kontext und sieht daher alle Funktionen und Konstanten
    der Hauptdatei. Ohne diese Datei funktioniert das Tool vollständig. */
+import {
+  EFF,
+  fmt,
+  round2,
+  esc,
+  csvZelle,
+  csvZeile,
+  parseCSV,
+  findCol,
+  parseDate,
+  datumsOrdnung,
+  leseGeld,
+  parseMoney,
+  compute,
+  occupancy,
+  jahressummen,
+  leseGastbetraege,
+  merkeGastbetraege,
+  monatsSummen,
+  baueCsvMonate,
+  baueCsvBuchungen,
+  baueCsvGastbetraege
+} from './js/kern.js';
+
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Kein Build-Schritt, keine zweite Datei: die Prüfungen laufen gegen dieselben
    Funktionen, die auch die Meldung rechnen. Fälle mit „offen“ dokumentieren

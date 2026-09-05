@@ -6,8 +6,14 @@ von Buchungen über den Monatswechsel und dem 90-Tage-Zähler der Bauordnung.
 
 **→ https://manuel.tools/ortstaxe-wien/**
 
-Eine einzige HTML-Datei, kein Build, keine Abhängigkeiten außer den Google Fonts.
-Die CSV wird ausschließlich im Browser verarbeitet und nirgendwo hochgeladen.
+Kein Build-Schritt, keine Bundler, kein Framework — native ES-Module, so
+ausgeliefert wie sie im Repo liegen. Die CSV wird ausschließlich im Browser
+verarbeitet und nirgendwo hochgeladen.
+
+    index.html            Markup und CSS
+    js/kern.js            Rechenkern — reine Funktionen, kein DOM
+    js/oberflaeche.js     alles mit document
+    selftest.js           die Prüfungen, nur bei ?selftest geladen
 
 ## Benutzung
 
@@ -36,7 +42,7 @@ die Befreiung geltend macht, hat die maßgeblichen Umstände nachzuweisen.
 
 ## Selbsttest
 
-`index.html?selftest` rechnet gegen dieselben Funktionen, die auch die Meldung
+`index.html?selftest` rechnet gegen dieselben Funktionen aus `js/kern.js`, die auch die Meldung
 erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem amtlichen
 Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der Monatsenden
 nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter, Betragsprüfung, Gebührengrenzen,

@@ -2,27 +2,27 @@
 
 ## Was das ist
 
-Single-File-Tool, das eine Airbnb-Reservierungs-CSV einliest und daraus die Wiener
-Ortstaxe pro Meldemonat berechnet. Läuft per Doppelklick im Browser und über
-GitHub Pages unter https://manuel.tools/ortstaxe-wien/
+Werkzeug, das eine Airbnb-Reservierungs-CSV einliest und daraus die Wiener Ortstaxe
+pro Meldemonat berechnet. Läuft über GitHub Pages unter
+https://manuel.tools/ortstaxe-wien/
 
 Das Konto `ieeks` hat eine Custom Domain (`manuel.tools`), deshalb läuft auch
 dieses Projekt-Pages darunter — `ieeks.github.io/ortstaxe-wien/` leitet dorthin um.
 
 ## Harte Regeln
 
-- **Das Tool ist eine Datei.** Alles steckt in `index.html` — Markup, CSS im
-  `<style>`, JS im `<script>`. Nicht in separate `.css`/`.js`-Dateien aufsplitten.
-  Einzige Ausnahme ist `selftest.js`: die Prüfungen werden nur bei `?selftest`
-  nachgeladen, und ohne die Datei läuft das Tool vollständig. Umgekehrt gilt das
-  nicht — `selftest.js` braucht die Funktionen aus `index.html`.
-- **Kein Build-Schritt.** Kein npm, kein Bundler, kein Framework. Einzige externe
-  Abhängigkeit sind die Google Fonts per CDN.
-- **Kein localStorage, kein sessionStorage.** Auch nicht „nur für die Einstellungen".
+- **Kein Build-Schritt.** Kein npm, kein Bundler, kein Framework. Native
+  ES-Module, direkt so ausgeliefert, wie sie im Repo liegen. Externe Abhängigkeiten
+  sind die Google Fonts und das Firebase-SDK, beide per CDN.
+- **`js/kern.js` fasst kein DOM an.** Dort steht nur, was aus Daten Zahlen macht.
+  Alles mit `document` gehört in `js/oberflaeche.js`. Diese Trennung ist der Grund,
+  warum der Selbsttest den echten Rechen- und Ausgabeweg prüfen kann statt ihn
+  nachzubauen — sie ist keine Kosmetik.
+- **Kein localStorage, kein sessionStorage** für Anwendungsdaten. Der Offline-Cache
+  von Firestore (IndexedDB) ist bewusst ausgenommen und die einzige Ausnahme.
 - **Deutschsprachige UI.** Auch Fehlermeldungen und Hinweistexte.
 - **Schriften:** IBM Plex Sans, IBM Plex Sans Condensed, IBM Plex Mono.
-- Änderungen am Tool gehen immer direkt in `index.html`, neue Testfälle in
-  `selftest.js`. Beide Dateien liegen nebeneinander im Repo-Wurzelverzeichnis.
+- Neue Testfälle gehören immer in `selftest.js`, im selben Commit wie die Änderung.
 
 ## Rechenlogik nicht anfassen
 
@@ -41,23 +41,49 @@ enthaltener Ortstaxe gerechnet wird.
 mit 1.644,80 € Gastentgelt, Basis ohne USt, Gebühr 0 → **64,58 €** gesamt
 (19,10 € Juni bei 13 Nächten + 45,48 € Juli bei 18 Nächten).
 
-Der komplette Selbsttest läuft über `index.html?selftest` — auch per Doppelklick
-aus dem Dateisystem. Bei jeder Änderung vorher und nachher aufrufen; die Anzeige
-nennt bestandene, fehlgeschlagene und bekannt offene Fälle.
+Der komplette Selbsttest läuft über `index.html?selftest`. Weil das Tool aus
+ES-Modulen besteht, braucht er einen Server — Browser blockieren Modul-Importe
+über `file://`:
+
+    python3 -m http.server
+    # http://localhost:8000/index.html?selftest
+
+Bei jeder Änderung vorher und nachher aufrufen; die Anzeige nennt bestandene,
+fehlgeschlagene und bekannt offene Fälle.
 
 ## Aufbau
 
-- `parseCSV` — eigener Parser, kommt mit `,` und `;` sowie Quotes zurecht
-- `findCol` — normalisiert Spaltennamen, matcht DE und EN, dann Teilstring-Fallback
+    index.html            Markup und CSS, lädt js/oberflaeche.js als Modul
+    js/kern.js            Rechenkern — reine Funktionen, kein DOM
+    js/oberflaeche.js     alles mit document: render, Handler, Sitzungszustand
+    selftest.js           alle Prüfungen, per ?selftest nachgeladen
+
+`js/kern.js`:
+
+- `parseCSV` / `csvZelle` / `csvZeile` — eigener Parser und Serializer, kommen mit
+  `,` und `;` sowie Quotes zurecht; geschrieben wird nach RFC 4180
+- `findCol` — normalisiert Spaltennamen, matcht DE und EN, dann Teilstring-Fallback;
+  mit `exakt` ohne diesen Fallback
+- `leseGeld` — prüft den ganzen String gegen ein Zahlenformat und liefert
+  `{wert,status}`; `parseMoney` ist der bequeme Zugriff darauf
+- `datumsOrdnung` — bestimmt TT/MM oder MM/TT einmal für die ganze Datei
 - `compute` — zerlegt jede Buchung in Nächte, ordnet Satz und Meldemonat zu
-- `occupancy` / `renderQuota` — 90-Tage-Zähler der Bauordnung, getrennt nach
-  `kurz` (bis 30 Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
-- `render` — Monatstabelle, Überweisungen, Buchungsdetail, Warnhinweise
+- `occupancy` — 90-Tage-Zähler der Bauordnung, getrennt nach `kurz` (bis 30
+  Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
+- `jahressummen` / `monatsSummen` — Jahres- und Fußzeilenwerte
+- `baueCsvMonate` / `baueCsvBuchungen` / `baueCsvGastbetraege` — die drei Exporte
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen
-- Print-CSS erzeugt die PDFs, `body.print-months` blendet für die Kurzfassung aus
-- `selftest.js` — alle Prüfungen, per `?selftest` nachgeladen
+
+`js/oberflaeche.js`: `render`, `renderQuota`, `run`, `load`, die Handler und
+`paidRaw`. Print-CSS erzeugt die PDFs, `body.print-months` blendet für die
+Kurzfassung aus.
+
+Ein Gastbetrag wird nur über einen echten Bestätigungs-Code wiederverwendet.
+Zeilen ohne Code bekommen einen Schlüssel mit `#`, den `load()` vor jeder neuen
+Datei verwirft — sonst landet der Betrag auf der Buchung, die zufällig in
+derselben Zeile steht.
 
 ## Offene Punkte
 
