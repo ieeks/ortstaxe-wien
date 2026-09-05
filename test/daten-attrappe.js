@@ -52,5 +52,11 @@ export async function ladeSchnappschuesse(objektId){
   return Object.keys(db.schnappschuesse[objektId]||{}).sort().reverse()
     .map(z=>Object.assign({zeitpunkt:z},db.schnappschuesse[objektId][z]));
 }
-export async function ladeSchnappschuss(objektId,z){ return db.schnappschuesse[objektId][z]; }
+/* Auch das Lesen eines Schnappschusses ist verzögerbar: ohne ein Zeitfenster
+   im Restore-Ablauf lässt sich nicht prüfen, was eine Eingabe *während* der
+   Wiederherstellung anrichtet. */
+export async function ladeSchnappschuss(objektId,z){
+  if(window.__standVerzug) await new Promise(r=>setTimeout(r,window.__standVerzug));
+  return db.schnappschuesse[objektId][z];
+}
 export { alsBuchungsdokument };

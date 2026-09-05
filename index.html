@@ -63,6 +63,9 @@ input[type=text]#konto{width:120px}
 .paid-in::placeholder{color:#9a9a9a;font-style:italic}
 .paid-in:focus{outline:2px solid var(--r50);outline-offset:-1px;border-style:solid}
 .paid-in.belegt{border-style:solid;border-color:var(--r50);background:#fbfffb}
+/* Während ein Vorgang den Bestand austauscht — Laden, Wiederherstellen —
+   gehört das Feld nicht mehr zu dem, was auf dem Schirm steht. */
+.paid-in:disabled{background:#F0F2F4;color:var(--ink-2);cursor:not-allowed;border-style:dotted}
 .lockrow{display:flex;align-items:center;gap:6px}
 #konto[readonly]{background:#F0F2F4;color:var(--ink-2);border-style:dashed;cursor:default}
 #konto:not([readonly]){border-color:var(--r50);box-shadow:0 0 0 2px rgba(24,106,87,.12)}
