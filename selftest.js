@@ -383,6 +383,78 @@ if(location.search.indexOf('selftest')>=0){
     csv('HM1;;G;05.08.2026;06.08.2026;;100','HM1;;G;05.09.2026;06.09.2026;;100')
       .warn.some(w=>/mehrfach/.test(w)), true);
 
+  /* CSV schreiben — Gegenstück zu parseCSV. Die Exportdatei ist der Speicher
+     für die Gastbeträge; zerreißt sie an einem Sonderzeichen, ist der Stand
+     weg. Geprüft wird deshalb der ganze Weg Export → Import. */
+  t('CSV schreiben','Zelle ohne Sonderzeichen bleibt roh', csvZelle('Anna'), 'Anna');
+  t('CSV schreiben','Semikolon wird gequotet', csvZelle('Anna;Muster'), '"Anna;Muster"');
+  t('CSV schreiben','Anführungszeichen werden verdoppelt', csvZelle('Anna "M"'), '"Anna ""M"""');
+  t('CSV schreiben','Zeilenumbruch wird gequotet', csvZelle('a\nb'), '"a\nb"');
+  t('CSV schreiben','leere Zelle bleibt leer', csvZelle(''), '');
+  t('CSV schreiben','null wird zur leeren Zelle', csvZelle(null), '');
+  t('CSV schreiben','Zeile fügt mit Semikolon zusammen', csvZeile(['a','b;c']), 'a;"b;c"');
+
+  /* Export → Import: Anzahl, Code, Name und Gastbetrag müssen identisch
+     zurückkommen. Vor dem Fix ergab ein Semikolon im Namen 0 Buchungen. */
+  const RT='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Einkünfte;Vom Gast bezahlt';
+  /* Bewusst über die echte Exportfunktion, nicht über csvZeile direkt: sonst
+     bliebe der Test grün, wenn render() am Serializer vorbei exportiert. */
+  /* Testeigenes Quoting: die Eingabe darf nicht von der Funktion abhängen,
+     die hier geprüft wird — sonst faellt bei einem Serializer-Fehler auch das
+     Fixture aus und der Test bricht ab statt rot zu werden. */
+  const qz=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const rundlauf=name=>{
+    const hin=compute(parseCSV(RT+'\n'+[qz('HM1'),qz(name),qz('05.08.2026'),qz('07.08.2026'),qz('100,00'),qz('120,00')].join(';')),BASE);
+    return {hin:hin, zurueck:compute(parseCSV(baueCsvGastbetraege(hin)),BASE)};
+  };
+  /* Defensiv: schlaegt der Serializer fehl, sollen die Faelle rot werden und
+     nicht den ganzen Testlauf mit einer Exception abbrechen. */
+  ['Anna;Muster','Anna "Muster"','a\nb','Müller, Anna'].forEach(n=>{
+    const {hin,zurueck}=rundlauf(n), a=hin.bookings[0], b=zurueck.bookings[0];
+    t('CSV schreiben','Rundlauf behält die Buchung: '+JSON.stringify(n), zurueck.bookings.length, 1);
+    t('CSV schreiben','Rundlauf behält den Code: '+JSON.stringify(n), b?b.code:null, 'HM1');
+    t('CSV schreiben','Rundlauf behält den Namen: '+JSON.stringify(n), b?b.name:null, n);
+    t('CSV schreiben','Rundlauf behält den Gastbetrag: '+JSON.stringify(n), b?b.paid:null, 120);
+    t('CSV schreiben','Rundlauf behält die Ortstaxe: '+JSON.stringify(n),
+      b?round2(b.tax):null, a?round2(a.tax):NaN);
+  });
+  /* Auch die beiden menschenlesbaren Exporte müssen quoten */
+  const sonder=compute(parseCSV(RT+'\n'+[qz('HM1'),qz('A;B'),qz('05.08.2026'),qz('07.08.2026'),qz('100,00'),qz('')].join(';')),BASE);
+  const zB=parseCSV(baueCsvBuchungen(sonder)), zM=parseCSV(baueCsvMonate(sonder,'601005590'));
+  t('CSV schreiben','Buchungsexport quotet den Namen',
+    baueCsvBuchungen(sonder).split('\n')[1].indexOf('"A;B"')>=0, true);
+  t('CSV schreiben','Buchungsexport bleibt spaltentreu', zB[1]?zB[1].length:0, zB[0].length);
+  t('CSV schreiben','Monatsexport bleibt spaltentreu', zM[1]?zM[1].length:0, 6);
+
+  /* Identität — ein gemerkter Gastbetrag darf nur an einem echten
+     Bestätigungs-Code hängen. Ohne Code bekommt die Zeile einen flüchtigen
+     Schlüssel mit „#“, den load() vor jeder neuen Datei verwirft. */
+  const OHNE='Status;Name des Gastes;Startdatum;Enddatum;Einkünfte';
+  const ohneCode=compute(parseCSV(OHNE+'\n;Anna;05.08.2026;07.08.2026;100'),BASE);
+  t('Identität','Zeile ohne Code bekommt Anzeige-Label', ohneCode.bookings[0].code, 'Zeile 2');
+  t('Identität','Zeile ohne Code bekommt flüchtigen Schlüssel', ohneCode.bookings[0].key, '#zeile2');
+  t('Identität','Zeile ohne Code ist nicht stabil', ohneCode.bookings[0].stabil, false);
+  t('Identität','fehlender Code warnt',
+    ohneCode.warn.some(w=>/Bestaetigungs-Code/.test(w)), true);
+  t('Identität','Zeile mit Code ist stabil',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].stabil, true);
+  t('Identität','Zeile mit Code nutzt den Code als Schlüssel',
+    csv('HM1;;G;05.08.2026;06.08.2026;;100').bookings[0].key, 'HM1');
+  /* Ein flüchtiger Schlüssel greift innerhalb derselben Datei — das ist gewollt */
+  t('Identität','flüchtiger Schlüssel wirkt in derselben Datei',
+    compute(parseCSV(OHNE+'\n;Anna;05.08.2026;07.08.2026;100'),
+      Object.assign({},BASE,{paid:{'#zeile2':200}})).bookings[0].paid, 200);
+  /* merkeGastbetraege darf codelose Zeilen nicht ins Gedächtnis nehmen */
+  const ged=Object.create(null);
+  merkeGastbetraege([{key:'#zeile2',stabil:false,paid:150},{key:'HM1',stabil:true,paid:150}], ged);
+  t('Identität','codelose Zeile wird nicht gemerkt', ged['#zeile2'], undefined);
+  t('Identität','Zeile mit Code wird gemerkt', ged['HM1'], '150,00');
+  /* Der Purge aus load(): „#“-Schlüssel überleben keinen Dateiwechsel */
+  const nachLoad=Object.create(null); nachLoad['#zeile2']='200,00'; nachLoad['HM1']='200,00';
+  for(const k in nachLoad) if(k.charAt(0)==='#') delete nachLoad[k];
+  t('Identität','flüchtiger Schlüssel überlebt load() nicht', nachLoad['#zeile2'], undefined);
+  t('Identität','echter Code überlebt load()', nachLoad['HM1'], '200,00');
+
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
   const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};

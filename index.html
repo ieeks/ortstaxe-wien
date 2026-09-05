@@ -317,6 +317,18 @@ function plusMonths(ts,n){
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
+/* --- CSV schreiben ---
+   Gegenstueck zu parseCSV: eine Zelle wird gequotet, sobald sie den Trenner,
+   ein Anfuehrungszeichen oder einen Zeilenumbruch enthaelt; enthaltene
+   Anfuehrungszeichen werden verdoppelt (RFC 4180). Ohne das zerreisst ein
+   Semikolon im Gastnamen die eigene Exportdatei — und genau die ist der
+   Speicher fuer die Gastbetraege. */
+function csvZelle(v){
+  const s = String(v==null?'':v);
+  return /[";\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+}
+function csvZeile(felder){ return felder.map(csvZelle).join(';'); }
+
 /* --- CSV --- */
 function parseCSV(text){
   text = text.replace(/^\uFEFF/,'');
@@ -421,20 +433,28 @@ function compute(csvRows, opt){
   const guestF    = 1 + (opt.gastfee/100);
   const USTF_SERVICE = 1.20;   // Airbnb verrechnet 20 % österreichische USt auf die Servicegebühr
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
-  let pauschal=0;
+  let pauschal=0, fluechtig=0;
   const bookings=[], months={}, warn=[], seen=Object.create(null);
 
   for(let r=1;r<csvRows.length;r++){
     const row=csvRows[r];
     const status=(ci.status>=0?row[ci.status]:'')||'';
-    const code=(ci.code>=0?row[ci.code]:'')||('Zeile '+(r+1));
+    // Nur ein echter Bestaetigungs-Code identifiziert eine Buchung dauerhaft.
+    // Ohne ihn bekommt die Zeile zwar ein Anzeige-Label, aber einen fluechtigen
+    // Schluessel — sonst landet ein gemerkter Gastbetrag beim naechsten Import
+    // auf der fremden Buchung, die zufaellig in derselben Zeile steht.
+    const codeRoh=(ci.code>=0?(row[ci.code]||'').trim():'');
+    const code=codeRoh||('Zeile '+(r+1));
+    const key=codeRoh||('#zeile'+(r+1));
+    const stabil=!!codeRoh;
+    if(!stabil) fluechtig++;
     const name=(ci.name>=0?row[ci.name]:'')||'';
     const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
     const netPay=parseMoney(row[ci.amount]);   // Auszahlung, wie sie in der CSV steht
     const basis=netPay*hostGross;
     // Was im Tool eingetippt wurde, schlägt die CSV-Spalte. Eine geleerte
     // Eingabe ist 0 und fällt damit bewusst auf den Prozentsatz zurück.
-    const ov=opt.paid ? opt.paid[code] : undefined;
+    const ov=opt.paid ? opt.paid[key] : undefined;
     const paid=ov!==undefined ? ov : (ci.paid>=0 ? parseMoney(row[ci.paid]) : 0);
     let amt;
     if(paid>0 && paid+0.005>=basis){
@@ -495,9 +515,14 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,name,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,a,b,nights,amt,paid,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
+  if(fluechtig)
+    warn.push(fluechtig+(fluechtig===1?' Zeile hat':' Zeilen haben')+' keinen Bestaetigungs-Code. '
+      +'Eingetippte Gastbetraege gelten dort nur fuer diese Sitzung und werden beim naechsten '
+      +'Import nicht wieder zugeordnet — sonst koennten sie auf einer fremden Buchung landen. '
+      +'Fuer dauerhafte Zuordnung die Spalte „Bestaetigungs-Code“ in die CSV aufnehmen.');
   if(pauschal && opt.gastfee>0)
     warn.push(pauschal+(pauschal===1?' Buchung wurde':' Buchungen wurden')+' mit pauschal '
       +opt.gastfee+' % Gast-Servicegebühr gerechnet — Airbnb staffelt diese Gebühr nach Dauer '
@@ -636,8 +661,38 @@ function leseGastbetraege(csvRows){
 }
 
 function merkeGastbetraege(bookings, ziel){
-  bookings.forEach(b=>{ if(ziel[b.code]===undefined && b.paid) ziel[b.code]=fmt(b.paid); });
+  bookings.forEach(b=>{ if(b.stabil && ziel[b.key]===undefined && b.paid) ziel[b.key]=fmt(b.paid); });
   return ziel;
+}
+
+/* --- Exportdateien ---
+   Bewusst reine Funktionen ohne DOM: render() haengt sie nur an window, der
+   Selbsttest ruft dieselben Funktionen auf. Sonst prueft der Test den
+   Serializer, waehrend der echte Export daran vorbeilaufen koennte. */
+function csvDatum(t){ return new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}); }
+
+function baueCsvMonate(res, konto){
+  return 'Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
+    res.months.map(m=>csvZeile([monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),
+      fmt(round2(m.tax)),konto+m.month.split('-')[1]+m.month.split('-')[0]])).join('\n');
+}
+
+function baueCsvBuchungen(res){
+  return 'Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
+    res.bookings.flatMap(b=>{
+      if(b.exempt) return [csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'])];
+      return b.parts.map(p=>csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,fmt(b.amt),
+        monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))]));
+    }).join('\n');
+}
+
+/* Round-Trip: dieselben Spaltennamen, die der Import erkennt. Diese Datei ist
+   der Speicher fuer die Gastbetraege — beim naechsten Mal wird sie statt der
+   rohen Airbnb-CSV hochgeladen und die Werte stehen wieder drin. */
+function baueCsvGastbetraege(res){
+  return 'Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt\n'+
+    res.bookings.map(b=>csvZeile([b.code,b.name,csvDatum(b.a),csvDatum(b.b),b.nights,
+      fmt(b.netPay),b.paid?fmt(b.paid):''])).join('\n');
 }
 
 function render(res, opt){
@@ -716,7 +771,7 @@ function render(res, opt){
   // Fokus und Cursor merken: getippt wird in diese Tabelle, und sie wird bei
   // jedem Tastendruck neu aufgebaut.
   const act=document.activeElement;
-  const hadFocus=act&&act.classList&&act.classList.contains('paid-in') ? act.dataset.code : null;
+  const hadFocus=act&&act.classList&&act.classList.contains('paid-in') ? act.dataset.key : null;
   const caret=hadFocus ? act.selectionStart : 0;
 
   let g='<tr><th>Code</th><th>Gast</th><th>Zeitraum</th><th class="num">Nächte</th><th class="col-band">Verlauf</th><th class="num">Betrag</th>'
@@ -727,24 +782,24 @@ function render(res, opt){
       ? '<span class="flag">über 3 Monate — befreit</span>'
       : b.parts.map(p=>'<div class="mono part" style="font-size:12px">'+monthLabel(p.month)+' · '+p.nights+' N · <span class="rate '+p.reg+'">'+pct(EFF[p.reg])+'</span> · '+fmt(round2(p.tax))+'</div>').join('');
     // Beim Tippen den Rohtext stehen lassen, sonst wird „36“ sofort zu „36,00“.
-    const val = paidRaw[b.code]!==undefined ? paidRaw[b.code] : (b.paid ? fmt(b.paid) : '');
+    const val = paidRaw[b.key]!==undefined ? paidRaw[b.key] : (b.paid ? fmt(b.paid) : '');
     g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.paid?' belegt':'')+'" inputmode="decimal" '
-        +'data-code="'+esc(b.code)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
   });
   rt.innerHTML=g;
   rt.querySelectorAll('.paid-in').forEach(el=>{
-    el.oninput=()=>{ paidRaw[el.dataset.code]=el.value; ungespeichert=true; run(); };
+    el.oninput=()=>{ paidRaw[el.dataset.key]=el.value; ungespeichert=true; run(); };
   });
   if(hadFocus){
-    const el=rt.querySelector('.paid-in[data-code="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
+    const el=rt.querySelector('.paid-in[data-key="'+(window.CSS&&CSS.escape?CSS.escape(hadFocus):hadFocus)+'"]');
     if(el){ el.focus(); try{ el.setSelectionRange(caret,caret); }catch(e){} }
   }
 
@@ -755,23 +810,9 @@ function render(res, opt){
   document.getElementById('out').classList.remove('hide');
   markiereSpeicherstand();
 
-  window.__csvMonths='Meldemonat;Satz;Naechte;Bemessungsgrundlage;Ortstaxe;Verwendungszweck\n'+
-    res.months.map(m=>[monthLabel(m.month),pct(EFF[m.reg]),m.nights,fmt(m.base),fmt(round2(m.tax)),opt.konto+m.month.split('-')[1]+m.month.split('-')[0]].join(';')).join('\n');
-  window.__csvRows='Code;Gast;Von;Bis;Naechte;Betrag;Meldemonat;Satz;Naechte_Monat;Bemessungsgrundlage;Ortstaxe\n'+
-    res.bookings.flatMap(b=>{
-      const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
-      if(b.exempt) return [[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),'befreit','','','','0,00'].join(';')];
-      return b.parts.map(p=>[b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.amt),monthLabel(p.month),pct(EFF[p.reg]),p.nights,fmt(p.base),fmt(round2(p.tax))].join(';'));
-    }).join('\n');
-
-  // Round-Trip: dieselben Spaltennamen, die der Import erkennt. Diese Datei
-  // ist der Speicher für die Gastbeträge — beim nächsten Mal wird sie statt
-  // der rohen Airbnb-CSV hochgeladen und die Werte stehen wieder drin.
-  window.__csvPaid='Bestätigungs-Code;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte;Vom Gast bezahlt\n'+
-    res.bookings.map(b=>{
-      const d=t=>new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
-      return [b.code,b.name,d(b.a),d(b.b),b.nights,fmt(b.netPay),b.paid?fmt(b.paid):''].join(';');
-    }).join('\n');
+  window.__csvMonths=baueCsvMonate(res,opt.konto);
+  window.__csvRows=baueCsvBuchungen(res);
+  window.__csvPaid=baueCsvGastbetraege(res);
 }
 
 /* --- Steuerung --- */
@@ -814,11 +855,11 @@ function load(f){
   // Sobald Daten da sind, gehört der Bildschirm den Zahlen. Aufklappbar
   // bleibt der Ablauf trotzdem — nichts wird unwiederbringlich weggeklickt.
   document.getElementById('ablauf').open=false;
-  // Eingaben bleiben stehen. Sie hängen am Bestätigungs-Code, und der gehört
-  // dauerhaft zu genau einer Buchung — ein gemerkter Betrag kann also nie auf
-  // einer fremden landen. Wer die Gastbeträge einträgt und danach den frischen
-  // Airbnb-Export lädt, behält sie für die bekannten Buchungen; neue Zeilen
-  // kommen leer dazu.
+  // Eingaben bleiben stehen — aber nur die, die an einem echten Bestätigungs-Code
+  // hängen. Der gehört dauerhaft zu genau einer Buchung. Werte aus Zeilen ohne
+  // Code sind mit „#“ geschlüsselt und werden hier verworfen: sie würden sonst
+  // auf der Buchung landen, die in der neuen Datei zufällig dieselbe Zeile hat.
+  for(const k in paidRaw) if(k.charAt(0)==='#') delete paidRaw[k];
   const r=new FileReader(); r.onload=()=>{lastText=r.result;run();}; r.readAsText(f,'utf-8');
 }
 
@@ -885,7 +926,7 @@ function ladeGastbetraege(f){
       const codes=Object.keys(map);
       codes.forEach(c=>{ paidRaw[c]=map[c]; });
       run();
-      const treffer=[...document.querySelectorAll('.paid-in')].filter(x=>map[x.dataset.code]!==undefined).length;
+      const treffer=[...document.querySelectorAll('.paid-in')].filter(x=>map[x.dataset.key]!==undefined).length;
       const offen=[...document.querySelectorAll('.paid-in')].filter(x=>x.value==='').length;
       info.textContent=codes.length+' Gastbeträge gelesen · '+treffer+' den angezeigten Buchungen zugeordnet'
         +(offen?' · '+offen+' Buchung'+(offen===1?'':'en')+' noch ohne Betrag':' · alle Buchungen belegt');

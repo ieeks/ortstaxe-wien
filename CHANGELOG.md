@@ -15,7 +15,7 @@ das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
   ein Entgeltbestandteil des Beherbergungsentgelts im Sinne des § 12 WTFG. In der
   Reservierungs-CSV steht der Betrag nicht, deshalb ein Prozentfeld mit Hinweis.
   Bisher fehlte dieser Anteil in der Meldung vollständig
-- Selbsttest unter `index.html?selftest` — 67 Prüfungen gegen die Rechenfunktionen,
+- Selbsttest unter `index.html?selftest` — 193 Prüfungen gegen die Rechenfunktionen,
   darunter beide Stichtagsgrenzen samt dem amtlichen Rechenbeispiel aus FAQ 3, die
   Schlüsselzahlen und der Regressionsfall aus `CLAUDE.md`, die Monatsenden der
   Drei-Monats-Frist und die Hochrechnung. Bekannte, noch offene Bugs lassen sich

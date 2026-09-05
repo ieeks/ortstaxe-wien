@@ -36,7 +36,7 @@ die Befreiung geltend macht, hat die maßgeblichen Umstände nachzuweisen.
 
 ## Selbsttest
 
-`index.html?selftest` rechnet 67 Prüfungen gegen dieselben Funktionen, die auch die
+`index.html?selftest` rechnet 193 Prüfungen gegen dieselben Funktionen, die auch die
 Meldung erstellen — die Schlüsselzahlen der MA 6, beide Stichtagsgrenzen samt dem
 amtlichen Rechenbeispiel aus FAQ 3, Meldemonat, Drei-Monats-Befreiung inklusive der
 Monatsenden nach § 902 ABGB, Hochrechnung, Rundung, Statusfilter und CSV-Parsing.
@@ -85,8 +85,8 @@ Regel nicht dazu.
 
 Meldung und Zahlung sind jeweils am 15. des Folgemonats fällig (§ 13 Abs. 1 WTFG),
 Verwendungszweck ist Abgabenkontonummer + MMJJJJ des Aufenthaltsmonats. Dazu kommt bis
-zum 15. Februar die elektronische Abgabenerklärung für das Vorjahr — die deckt das Tool
-noch nicht ab.
+zum 15. Februar die elektronische Abgabenerklärung für das Vorjahr — die Jahressummen
+dafür weist das Tool unter der Monatstabelle aus.
 
 ### Geprüftes Beispiel
 
