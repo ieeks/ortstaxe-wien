@@ -228,6 +228,68 @@ await lade(KOPF + 'HK1;Bestätigt;Kim;05.05.2027;06.05.2027;100,00;150,00\n');
 await seite.waitForTimeout(1200);
 t('korrigierte 150 kommen an', (await db()).buchungen[objK].HK1.gastbetrag, 150);
 
+console.log('\nUnlesbare Eingabe löscht keinen gültigen Betrag');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HU1;Bestätigt;Uwe;05.06.2027;06.06.2027;100,00;150,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleU = (await db()).buchungen;
+const oU = Object.keys(alleU).filter(o => alleU[o].HU1)[0];
+t('gültige 150 gespeichert', alleU[oU].HU1.gastbetrag, 150);
+await seite.fill('.paid-in[data-key="HU1"]', 'abc');
+await seite.waitForTimeout(2200);
+t('gültiger Wert bleibt erhalten', (await db()).buchungen[oU].HU1.gastbetrag, 150);
+t('Status meldet die unlesbare Eingabe',
+  /unlesbar/.test(await seite.textContent('#wolkeStand')), true);
+t('und der Ungespeichert-Marker bleibt an',
+  await seite.$eval('#dlPaid', n => n.classList.contains('offen')), true);
+
+console.log('\nManuell gesetzter Wert blockiert die korrigierte CSV nicht mehr');
+await seite.fill('.paid-in[data-key="HU1"]', '150,00');
+await seite.waitForTimeout(2200);
+await lade(KOPF + 'HU1;Bestätigt;Uwe;05.06.2027;06.06.2027;100,00;200,00\n');
+await seite.waitForTimeout(1400);
+t('korrigierte 200 kommen an', (await db()).buchungen[oU].HU1.gastbetrag, 200);
+
+console.log('\nBearbeiten während eines Objektwechsels schreibt nicht ins falsche Objekt');
+await seite.click('#objektNeu');
+await seite.waitForTimeout(900);
+const objs2 = await seite.$$eval('#objekt option', o => o.map(x => x.value));
+if (objs2.length >= 2) {
+  const [ersterO, zweiterO] = objs2;
+  await seite.evaluate(id => { window.__ladeVerzug = {[id]: 1500}; }, zweiterO);
+  await seite.selectOption('#objekt', zweiterO);     // lädt langsam
+  await seite.waitForTimeout(150);
+  const nochDa = await seite.$('.paid-in[data-key="HU1"]');
+  if (nochDa) { await nochDa.fill('999,00'); }       // Feld des alten Objekts
+  await seite.waitForTimeout(2600);
+  const nachher = (await db()).buchungen[zweiterO] || {};
+  t('HU1 nicht ins zweite Objekt geschrieben', !!nachher.HU1, false);
+  await seite.evaluate(() => { window.__ladeVerzug = {}; });
+  await seite.selectOption('#objekt', ersterO);
+  await seite.waitForTimeout(900);
+}
+
+console.log('\nLaufender Schreibvorgang hebt die Wiederherstellung nicht auf');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HW1;Bestätigt;Wilma;05.07.2027;06.07.2027;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleW = (await db()).buchungen;
+const oW = Object.keys(alleW).filter(o => alleW[o].HW1)[0];
+await lade(KOPF + 'HW1;Bestätigt;Wilma;05.07.2027;06.07.2027;100,00;\n'
+                + 'HW2;Bestätigt;Xaver;10.07.2027;11.07.2027;100,00;\n');
+await seite.waitForTimeout(900);
+t('zwei Buchungen vorhanden', Object.keys((await db()).buchungen[oW]).length, 2);
+await seite.evaluate(() => { window.__schreibVerzug = 1200; });
+await seite.fill('.paid-in[data-key="HW1"]', '150,00');
+await seite.waitForTimeout(1400);                    // Schreibvorgang läuft bereits
+await seite.selectOption('#stand', {index: 1});
+await seite.click('#standZurueck');
+await seite.waitForTimeout(3500);                    // alter Auftrag längst durch
+await seite.evaluate(() => { window.__schreibVerzug = 0; });
+t('HW2 bleibt entfernt', !!(await db()).buchungen[oW].HW2, false);
+
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
 console.log('\n' + gut + ' bestanden · ' + schlecht + ' fehlgeschlagen');

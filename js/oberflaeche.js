@@ -406,6 +406,21 @@ function ladeGastbetraege(f){
    Nichts hier darf den Rechenweg beeinflussen. */
 
 let daten=null, konto=null, objektId=null, objekte=[];
+/* Alle Schreibvorgänge laufen durch eine Kette. `clearTimeout` stoppt nur einen
+   wartenden Timer — hat sein Rückruf den Datenbankaufruf schon begonnen, läuft
+   der weiter und schrieb bisher nach einer Wiederherstellung den alten Stand
+   zurück. Verkettet wartet die Wiederherstellung auf laufende Schreibvorgänge
+   und ersetzt danach; die Reihenfolge ist damit festgelegt. */
+let schreibKette = Promise.resolve();
+function inReihe(fn){
+  const naechste = schreibKette.then(fn, fn);
+  schreibKette = naechste.catch(()=>{});
+  return naechste;
+}
+/* Solange ein Objektwechsel lädt, gehören Anzeige und Eingaben noch zum alten
+   Objekt. Speichern ist in dieser Zwischenphase gesperrt — sonst landet der
+   Bestand von Wohnung A unter der bereits umgestellten Ziel-ID von B. */
+let laedt = false;
 const $=id=>document.getElementById(id);
 
 function stand(text, offen){
@@ -451,9 +466,13 @@ function leereAnzeige(){
 let ladeNr=0;
 async function ladeBestand(){
   const meine=++ladeNr, ziel=objektId;
+  laedt=true;
   stand('lädt …');
-  const docs=await daten.ladeBuchungen(ziel);
+  let docs;
+  try{ docs=await daten.ladeBuchungen(ziel); }
+  catch(ex){ if(meine===ladeNr) laedt=false; throw ex; }
   if(meine!==ladeNr || ziel!==objektId) return;      // überholt oder veraltet
+  laedt=false;
   wolkeBestand = docs.length ? docs : null;
   // Ohne Bestand und ohne geladene Datei gibt es nichts anzuzeigen — sonst
   // bliebe die Tabelle des vorherigen Objekts stehen. Verbergen genügt nicht:
@@ -498,7 +517,8 @@ function uebernimmEinstellungen(e){
 /* Nach einem CSV-Import: Schnappschuss, zusammenführen, schreiben. Der
    Schnappschuss kommt zuerst — sonst schützt er nicht vor genau dem Import,
    der ihn nötig macht. */
-async function speichereImport(dateiname, text){
+function speichereImport(dateiname, text){ return inReihe(()=>importieren(dateiname, text)); }
+async function importieren(dateiname, text){
   // Objekt zu Beginn festhalten. Zwischen den await-Punkten kann der
   // Objektwähler umgestellt worden sein — dann landeten die Buchungen von
   // Wohnung A unter Wohnung B.
@@ -513,10 +533,12 @@ async function speichereImport(dateiname, text){
     // steuerpflichtig stehen. Beim Lesen filtert compute() sie am Status.
     const alle=res.bookings.concat(res.storniert);
     const ohneCode=alle.filter(b=>!b.stabil).length;
-    const kaputt=alle.filter(b=>b.stabil && b.betragStatus==='ungueltig');
+    const kaputt=alle.filter(b=>b.stabil && (b.betragStatus==='ungueltig'
+                                          || b.gastbetragStatus==='ungueltig'));
     // Ein unlesbarer Betrag darf einen bereits gespeicherten, richtigen Wert
     // nicht mit 0 überschreiben. Solche Zeilen werden zurückgestellt.
-    const neu=alle.filter(b=>b.stabil && b.betragStatus!=='ungueltig')
+    const neu=alle.filter(b=>b.stabil && b.betragStatus!=='ungueltig'
+                                      && b.gastbetragStatus!=='ungueltig')
                   .map(b=>alsBuchungsdokument(b, ziel));
 
     const gespeichert=await daten.ladeBuchungen(ziel);
@@ -568,35 +590,49 @@ async function speichereImport(dateiname, text){
    anzeigte. Entprellt, weil bei jedem Tastendruck gefeuert wird. */
 let tippUhr=null;
 function speichereEingabe(){
-  if(!(daten && konto && objektId) || !wolkeBestand) return;
+  if(!(daten && konto && objektId) || !wolkeBestand || laedt) return;
   stand('nicht gespeichert', true);
   clearTimeout(tippUhr);
   // Ziel UND Daten jetzt festhalten, nicht erst wenn der Timer abläuft. Sonst
   // wird nach einem Objektwechsel der Bestand von Wohnung A unter Wohnung B
   // geschrieben: die Daten stammen noch aus A, die Ziel-ID schon aus B.
   const ziel=objektId, opt=optionen();
-  let docs;
+  let alle, docs, offen;
   try{
-    docs=compute(aktuelleZeilen(),opt).bookings
-          .filter(b=>b.stabil && b.betragStatus!=='ungueltig')
-          .map(b=>alsBuchungsdokument(b, ziel));
+    alle=compute(aktuelleZeilen(),opt).bookings;
+    // Eine unlesbare Eingabe darf den gespeicherten Wert nicht löschen. Vorher
+    // prüfte der Filter nur den Status der Auszahlung, und „abc“ im
+    // Gastbetragsfeld schrieb null über gültige 150 € — mit der Meldung
+    // „gespeichert“. Solche Zeilen bleiben ungeschrieben und werden genannt.
+    offen=alle.filter(b=>b.stabil && (b.betragStatus==='ungueltig'
+                                      || b.gastbetragStatus==='ungueltig'));
+    docs=alle.filter(b=>b.stabil && b.betragStatus!=='ungueltig'
+                                 && b.gastbetragStatus!=='ungueltig')
+             .map(b=>alsBuchungsdokument(b, ziel));
   }catch(ex){ return stand('Nicht gespeichert: '+ex.message, true); }
-  tippUhr=setTimeout(async()=>{
+  tippUhr=setTimeout(()=>inReihe(async()=>{
     if(ziel!==objektId) return;            // inzwischen gewechselt — verwerfen
     try{
       await daten.schreibeBuchungen(ziel, docs);
       await daten.speichereEinstellungen(opt);
       if(ziel!==objektId) return;
       wolkeBestand=docs;
-      // Der Punkt auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim
-      // Schließen bedeuten „steht nur im Arbeitsspeicher“. Sobald die Datenbank
-      // den Wert hat, stimmt das nicht mehr — sonst warnt der Browser vor
-      // Datenverlust, der keiner ist, und der Punkt wird bedeutungslos.
-      ungespeichert=false; markiereSpeicherstand();
-      stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+      // Nach dem Speichern ist die Datenbank die Quelle. Bliebe die
+      // Überschreibung in paidRaw stehen, verdrängte sie beim nächsten Import
+      // einen korrigierten Dateiwert, noch bevor er gespeichert wird.
+      if(!offen.length) for(const k in paidRaw) delete paidRaw[k];
+      if(offen.length){
+        stand(offen.length+' Eingabe'+(offen.length===1?'':'n')+' unlesbar — nicht gespeichert', true);
+      }else{
+        // Der Punkt auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim
+        // Schließen bedeuten „steht nur im Arbeitsspeicher“. Sobald die
+        // Datenbank den Wert hat, stimmt das nicht mehr.
+        ungespeichert=false; markiereSpeicherstand();
+        stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+      }
       fuelleStaende();
     }catch(ex){ stand('Nicht gespeichert: '+ex.message, true); }
-  }, 1200);
+  }), 1200);
 }
 
 $('anmelden').onclick=async()=>{
@@ -609,10 +645,13 @@ $('abmelden').onclick=async()=>{
 };
 $('objekt').onchange=async()=>{
   clearTimeout(tippUhr);                   // ausstehende Speicherung gehört zum alten Objekt
-  // Auch die geladene CSV gehört zum bisherigen Objekt. Bliebe sie liegen,
-  // zeigte ein leeres zweites Objekt die Buchungen des ersten.
-  lastText=null;
+  // Alles Objektgebundene sofort räumen — vor dem ersten await. Bliebe der
+  // Bestand stehen, wäre die Tabelle des alten Objekts weiter bearbeitbar,
+  // während objektId schon auf das neue zeigt; das Autospeichern schriebe
+  // dann A unter B.
+  lastText=null; wolkeBestand=null;
   for(const k in paidRaw) delete paidRaw[k];
+  leereAnzeige();
   objektId=$('objekt').value;
   await ladeBestand();
 };
@@ -645,6 +684,10 @@ $('standZurueck').onclick=async()=>{
   // der Wiederherstellung ab, schriebe es die alten Daten wieder hinein und
   // machte sie damit rückgängig.
   clearTimeout(tippUhr); tippUhr=null;
+  // Ein bereits gestarteter Schreibauftrag lässt sich nicht mehr abbrechen —
+  // er wird abgewartet. Sonst schriebe er nach der Wiederherstellung den alten
+  // Stand zurück und machte sie rückgängig.
+  await inReihe(async()=>{
   try{
     stand('spielt zurück …');
     const jetzt=await daten.ladeBuchungen(ziel);
@@ -662,9 +705,10 @@ $('standZurueck').onclick=async()=>{
     const behalten=Object.create(null);
     zurueck.forEach(d=>{ behalten[d.code]=1; });
     const zuviel=jetzt.filter(d=>!behalten[d.code]).map(d=>d.code);
-    const erg=await daten.ersetzeBuchungen(ziel, zurueck, zuviel);
-    if(alt.einstellungen) { await daten.speichereEinstellungen(alt.einstellungen);
-                            uebernimmEinstellungen(alt.einstellungen); }
+    // Buchungen und Einstellungen in einem Vorgang: sonst stehen nach einem
+    // Fehler die zurückgespielten Buchungen neben den alten Einstellungen.
+    const erg=await daten.ersetzeBuchungen(ziel, zurueck, zuviel, alt.einstellungen||null);
+    if(alt.einstellungen) uebernimmEinstellungen(alt.einstellungen);
     if(ziel!==objektId) return;
     // Getipptes aus der Sitzung würde den zurückgespielten Stand sofort wieder
     // überlagern — es gehört zum verworfenen Stand, nicht zum alten.
@@ -680,6 +724,7 @@ $('standZurueck').onclick=async()=>{
         +'unteilbaren Vorgang, bei einem Abbruch kann er unvollständig sein':'');
     $('paidInfo').classList.remove('hide');
   }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
+  });
 };
 $('objektNeu').onclick=async()=>{
   const name=prompt('Name des neuen Objekts:');

@@ -336,6 +336,11 @@ function compute(csvRows, opt){
       warn.push(code+' ('+name+') — „Vom Gast bezahlt“ ist kein lesbarer Geldwert. '
         +'Der Wert wird ignoriert, gerechnet wird mit dem Prozentsatz.');
     const paid=gPaid.wert;
+    // Der Status des Gastbetrags getrennt vom Status der Auszahlung. Ohne ihn
+    // prüfte der Speicherfilter nur die Auszahlung, und eine Fehleingabe wie
+    // „abc“ im Gastbetragsfeld schrieb null über einen gültigen gespeicherten
+    // Wert — mit der Anzeige „gespeichert“.
+    const gastbetragStatus=gPaid.status;   // 'leer' | 'ok' | 'mehrdeutig' | 'ungueltig'
     // Woher der gerechnete Betrag stammt. Ohne dieses Feld sah ein verworfener
     // Gastbetrag in der Tabelle aus wie ein belegter: das Feld war gefüllt,
     // gerechnet wurde aber mit dem Pauschalsatz.
@@ -422,7 +427,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,gastbetragStatus,netPay,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
