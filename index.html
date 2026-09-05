@@ -368,15 +368,65 @@ function mkDate(y,mo,d){
   const t=Date.UTC(y,mo-1,d), c=new Date(t);
   return (c.getUTCMonth()===mo-1&&c.getUTCDate()===d) ? t : NaN;
 }
-function parseDate(s){
+function parseDate(s, ordnung){
   s=(s||'').trim();
   let m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\.?$/);
   if(m) return mkDate(+m[3],+m[2],+m[1]);
-  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // Uhrzeit darf dranhängen, beliebiger Text dahinter nicht: '2026-08-01xyz'
+  // wurde früher als 1. August gelesen, statt die Zeile zu melden.
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/);
   if(m) return mkDate(+m[1],+m[2],+m[3]);
   m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if(m) return +m[1]>12 ? mkDate(+m[3],+m[2],+m[1]) : mkDate(+m[3],+m[1],+m[2]);
+  if(m){
+    // Ohne Befund aus der Datei bleibt es beim amerikanischen Format des
+    // englischen Airbnb-Exports; ein Wert über 12 vorn ist für sich eindeutig.
+    const dmy = ordnung ? ordnung==='dmy' : (+m[1]>12);
+    return dmy ? mkDate(+m[3],+m[2],+m[1]) : mkDate(+m[3],+m[1],+m[2]);
+  }
   return NaN;
+}
+
+/* Schrägstrich-Daten sind je Zelle nicht entscheidbar: 01/08/2026 ist der
+   1. August oder der 8. Januar — im falschen Fall wandert die Buchung in einen
+   anderen Meldemonat. 01/08–03/08 wurde so zu 59 statt 2 Nächten. Entschieden
+   wird deshalb über die ganze Datei:
+     1. Ein Wert über 12 an einer Position legt die Reihenfolge für alle fest.
+     2. Bleibt es mehrdeutig, entscheidet die Spalte „Anzahl der Nächte“, wenn
+        sie zu genau einer Lesart passt.
+     3. Sonst: Warnung statt stiller Annahme. */
+function datumsOrdnung(rows, ci){
+  const spalten=[ci.start,ci.end].filter(x=>x>=0);
+  const zelle=(r,c)=>String((rows[r]||[])[c]||'').trim();
+  const slashRe=/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+  let dmy=false, mdy=false, slash=0;
+  for(let r=1;r<rows.length;r++) for(const c of spalten){
+    const m=zelle(r,c).match(slashRe);
+    if(!m) continue;
+    slash++;
+    if(+m[1]>12) dmy=true;
+    if(+m[2]>12) mdy=true;
+  }
+  if(!slash)     return {ordnung:null, quelle:null, slash:0, widerspruch:false};
+  if(dmy&&mdy)   return {ordnung:null, quelle:null, slash:slash, widerspruch:true};
+  if(dmy)        return {ordnung:'dmy', quelle:'tag', slash:slash, widerspruch:false};
+  if(mdy)        return {ordnung:'mdy', quelle:'tag', slash:slash, widerspruch:false};
+
+  // Ganze Datei mehrdeutig — die Nächtespalte kann es auflösen
+  if(ci.nights>=0 && ci.start>=0 && ci.end>=0){
+    let tDmy=0, tMdy=0;
+    for(let r=1;r<rows.length;r++){
+      const cn=parseInt(zelle(r,ci.nights),10);
+      if(!(cn>0)) continue;
+      for(const o of ['dmy','mdy']){
+        const a=parseDate(zelle(r,ci.start),o), b=parseDate(zelle(r,ci.end),o);
+        if(isNaN(a)||isNaN(b)) continue;
+        if(Math.round((b-a)/86400000)===cn){ if(o==='dmy') tDmy++; else tMdy++; }
+      }
+    }
+    if(tDmy&&!tMdy) return {ordnung:'dmy', quelle:'naechte', slash:slash, widerspruch:false};
+    if(tMdy&&!tDmy) return {ordnung:'mdy', quelle:'naechte', slash:slash, widerspruch:false};
+  }
+  return {ordnung:null, quelle:null, slash:slash, widerspruch:false};
 }
 /* Geldbetrag streng lesen. Rückgabe {wert,status} mit status
    'leer' | 'ok' | 'mehrdeutig' | 'ungueltig'.
@@ -483,7 +533,19 @@ function compute(csvRows, opt){
   const USTF_SERVICE = 1.20;   // Airbnb verrechnet 20 % österreichische USt auf die Servicegebühr
   const ustF = opt.basis==='ust10' ? 1.10 : 1.00;
   let pauschal=0, fluechtig=0;
+
   const bookings=[], months={}, warn=[], seen=Object.create(null);
+  // Datumsformat einmal für die ganze Datei bestimmen, nicht je Zelle raten
+  const dOrd=datumsOrdnung(csvRows,ci);
+  if(dOrd.widerspruch)
+    warn.push('Die Datumsspalten enthalten Schrägstrich-Daten in beiden Reihenfolgen '
+      +'(TT/MM und MM/TT gleichzeitig). Die Zuordnung zu Meldemonaten ist damit nicht '
+      +'verlässlich — bitte die CSV mit einheitlichem Datumsformat neu exportieren.');
+  else if(dOrd.slash && !dOrd.ordnung)
+    warn.push('Die Datumsangaben stehen im Schrägstrich-Format und sind in dieser Datei '
+      +'nicht eindeutig: kein Wert liegt über 12. Gelesen wird als MM/TT/JJJJ wie im '
+      +'englischen Airbnb-Export. Steht dort TT/MM, wandern Buchungen in falsche '
+      +'Meldemonate — zum Prüfen die Spalte „Anzahl der Nächte“ mitexportieren.');
 
   for(let r=1;r<csvRows.length;r++){
     const row=csvRows[r];
@@ -498,7 +560,7 @@ function compute(csvRows, opt){
     const stabil=!!codeRoh;
     if(!stabil) fluechtig++;
     const name=(ci.name>=0?row[ci.name]:'')||'';
-    const a=parseDate(row[ci.start]), b=parseDate(row[ci.end]);
+    const a=parseDate(row[ci.start],dOrd.ordnung), b=parseDate(row[ci.end],dOrd.ordnung);
     const gPay=leseGeld(row[ci.amount]);       // Auszahlung, wie sie in der CSV steht
     if(gPay.status==='ungueltig')
       warn.push(code+' ('+name+') — Betrag „'+(row[ci.amount]||'')+'“ ist kein lesbarer Geldwert. '

@@ -529,6 +529,60 @@ if(location.search.indexOf('selftest')>=0){
   t('Abstimmung','Fußzeilen-Ortstaxe = Summe der Monatsbeträge',
     fmt(round2(monatsSummen(abst.months).tax)), fmt(round2(abst.months.reduce((s,m)=>s+round2(m.tax),0))));
 
+  /* Datumsformat (F14). 01/08/2026 ist der 1. August oder der 8. Januar — je
+     Zelle nicht entscheidbar. 01/08–03/08 ergab so 59 statt 2 Nächte. Die
+     Reihenfolge wird deshalb einmal für die ganze Datei bestimmt. */
+  const DH ='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Einkünfte';
+  const DHN='Bestätigungs-Code;Status;Name des Gastes;Startdatum;Enddatum;Anzahl der Nächte;Einkünfte';
+  const dcsv=(kopf,...r)=>compute(parseCSV(kopf+'\n'+r.join('\n')),BASE);
+  const nStr=b=>b.bookings.map(x=>x.nights).join(',');
+
+  t('Datumsformat','ganze Datei mehrdeutig bleibt bei MM/TT',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100')), '59');
+  t('Datumsformat','ganze Datei mehrdeutig warnt',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100').warn.some(w=>/nicht eindeutig/.test(w)), true);
+  t('Datumsformat','ein Tag über 12 legt die Datei auf TT/MM fest',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100')), '2,2');
+  t('Datumsformat','TT/MM erkannt warnt nicht',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100').warn.length, 0);
+  t('Datumsformat','ein Monatswert über 12 legt die Datei auf MM/TT fest',
+    nStr(dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;08/13/2026;08/15/2026;100')), '59,2');
+  t('Datumsformat','Nächtespalte löst Mehrdeutigkeit zu TT/MM',
+    nStr(dcsv(DHN,'A;;G;01/08/2026;03/08/2026;2;100')), '2');
+  t('Datumsformat','Nächtespalte löst Mehrdeutigkeit zu MM/TT',
+    nStr(dcsv(DHN,'A;;G;01/08/2026;03/08/2026;59;100')), '59');
+  t('Datumsformat','durch Nächtespalte aufgelöst warnt nicht',
+    dcsv(DHN,'A;;G;01/08/2026;03/08/2026;2;100').warn.length, 0);
+  t('Datumsformat','widersprüchliche Reihenfolgen warnen',
+    dcsv(DH,'A;;G;13/08/2026;15/08/2026;100','B;;G;08/13/2026;08/15/2026;100')
+      .warn.some(w=>/beiden Reihenfolgen/.test(w)), true);
+  t('Datumsformat','deutsches Format bleibt unberührt',
+    nStr(dcsv(DH,'A;;G;01.08.2026;03.08.2026;100')), '2');
+  t('Datumsformat','deutsches Format warnt nicht',
+    dcsv(DH,'A;;G;01.08.2026;03.08.2026;100').warn.length, 0);
+  t('Datumsformat','ISO bleibt unberührt',
+    nStr(dcsv(DH,'A;;G;2026-08-01;2026-08-03;100')), '2');
+  /* Der Meldemonat ist die eigentliche Auswirkung, nicht nur die Nächtezahl */
+  t('Datumsformat','TT/MM landet im richtigen Meldemonat',
+    dcsv(DH,'A;;G;01/08/2026;03/08/2026;100','B;;G;13/08/2026;15/08/2026;100')
+      .months.map(m=>m.month).join(','), '2026-08');
+
+  /* datumsOrdnung einzeln */
+  const ordn=(kopf,...r)=>{ const rows=parseCSV(kopf+'\n'+r.join('\n'));
+    return datumsOrdnung(rows,{start:3,end:4,nights:kopf===DHN?5:-1}); };
+  t('Datumsformat','ohne Schrägstriche kein Befund', ordn(DH,'A;;G;01.08.2026;03.08.2026;100').slash, 0);
+  t('Datumsformat','Quelle „tag“ bei eindeutigem Tageswert',
+    ordn(DH,'A;;G;13/08/2026;15/08/2026;100').quelle, 'tag');
+  t('Datumsformat','Quelle „naechte“ wenn die Spalte entscheidet',
+    ordn(DHN,'A;;G;01/08/2026;03/08/2026;2;100').quelle, 'naechte');
+  t('Datumsformat','Widerspruch wird als solcher gemeldet',
+    ordn(DH,'A;;G;13/08/2026;15/08/2026;100','B;;G;08/13/2026;08/15/2026;100').widerspruch, true);
+
+  /* ISO mit angehängtem Müll darf nicht als gültiges Datum durchgehen */
+  t('Datumsformat','ISO mit Text dahinter wird abgelehnt', isNaN(parseDate('2026-08-01xyz')), true);
+  t('Datumsformat','ISO mit Uhrzeit bleibt gültig', parseDate('2026-08-01T12:30:00'), parseDate('2026-08-01'));
+  t('Datumsformat','ISO mit Zeitzone bleibt gültig', parseDate('2026-08-01T00:00:00+02:00'), parseDate('2026-08-01'));
+
   /* Ausgabe */
   const farbe={ok:'var(--r50)',fehler:'var(--flag)',offen:'var(--r80)',behoben:'var(--r80)'};
   const zeichen={ok:'✓',fehler:'✗',offen:'!',behoben:'△'};
