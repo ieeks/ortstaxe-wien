@@ -138,8 +138,8 @@ mit dem vollständigen Stand statt Revisionen je Monat — der Jahresbestand sin
 wenige hundert Buchungen, und ein einzelnes Dokument spielt sich ohne
 Zusammensetzen zurück.
 
-`firestore.rules` sind **noch nicht gegen den Emulator geprüft**. Vor dem ersten
-echten Einsatz: `firebase emulators:start --only firestore`.
+Die neuen `firestore.rules` sind mit `test/firestore-regeln.mjs` gegen den lokalen
+Firestore-Emulator geprüft (14 Fälle). Die echte Anmeldung bleibt separat zu prüfen.
 
 Beim Import wird zusammengeführt, **nie ersetzt**: ein Export über einen einzelnen
 Monat darf den Rest des Jahres nicht löschen. Ein von Hand gesetzter Gastbetrag
@@ -274,3 +274,13 @@ CSV käme nie durch.
 ## Offene Punkte
 
 Siehe `TODO.md` und die Issues im Repo.
+
+## Monatsarbeit (Feature-Branch)
+
+`js/abschluss.js` enthält ausschließlich die reine Monatsprüfung und Sperrvergleiche;
+`js/belegpaket.js` den lokalen PDF-/ZIP-Export. Beide verwenden den bestehenden Rechenkern.
+Abschlussdaten sind bewusst eingefrorene Prüfbelege, keine zweite Quelle für die laufende Rechnung.
+Alle Buchungsschreibwege müssen durch `aendereBestand` laufen: Guard-Revision,
+Monatssperren, Buchungen und Änderungsprotokoll werden zusammen verarbeitet.
+Bei einem abgewiesenen Import muss die zuvor sichtbare Quelle wiederhergestellt werden.
+Kein automatisches Wiederöffnen gesperrter Monate, keine Teilwrites bei Größenüberschreitung.

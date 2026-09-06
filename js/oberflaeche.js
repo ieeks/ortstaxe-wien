@@ -1,3 +1,5 @@
+import {monatsStand, beruehrt} from './abschluss.js';
+import {belegpaket} from './belegpaket.js';
 /* Oberfläche: alles, was das DOM anfasst. Rechnet nichts selbst — die Zahlen
    kommen ausschließlich aus js/kern.js. */
 
@@ -188,7 +190,7 @@ function render(res, opt){
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
         +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
-        +(sperren?'disabled ':'')
+        +(sperren || geschlosseneBuchung(b.code)?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
@@ -202,7 +204,7 @@ function render(res, opt){
       // anzuzeigen und still zu verwerfen. Das Feld ist dabei auch im DOM
       // gesperrt; hier steht die Sperre für alles, was das Ereignis anders
       // auslöst.
-      if(sperren){ el.value=el.defaultValue; return; }
+      if(sperren || geschlosseneBuchung(el.dataset.key)){ el.value=el.defaultValue; return; }
       // Ein geleertes Feld hebt die Überschreibung auf, statt als ausdrückliche
       // Null zu gelten. Vorher blieb '' liegen, behielt Vorrang vor der Datei
       // und die Rechnung fiel auf die Schätzung zurück — die Warnung riet
@@ -287,6 +289,7 @@ function run(){
     // mit 150 € kam dann nie durch, weil die gemerkten 120 € Vorrang hatten.
     if(!wolkeBestand) merkeGastbetraege(res.bookings, paidRaw);
     render(res,opt);
+    zeichneMonatsarbeit(res);
   }catch(e){
     err.textContent=e.message; err.classList.remove('hide');
     document.getElementById('out').classList.add('hide');
@@ -303,6 +306,7 @@ function load(f){
   for(const k in paidRaw) if(k.charAt(0)==='#') delete paidRaw[k];
   const r=new FileReader();
   r.onload=()=>{
+    const vorher={lastText,wolkeBestand,paid:{...paidRaw},ungespeichert};
     lastText=r.result;
     wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
     neuerBestand();             // wartende Aufträge gehören zum alten Bestand
@@ -316,7 +320,18 @@ function load(f){
     const laeuftImport = !!(daten && konto && objektId);
     if(laeuftImport) sperreAn();
     run();
-    if(laeuftImport) speichereImport(f.name, r.result).then(sperreAus, sperreAus);
+    if(laeuftImport){
+      const version=bestandVersion,ziel=objektId;
+      speichereImport(f.name,r.result).then(erg=>{
+        if(erg?.fehler && version===bestandVersion && ziel===objektId){
+          lastText=vorher.lastText;wolkeBestand=vorher.wolkeBestand;
+          for(const k in paidRaw)delete paidRaw[k];Object.assign(paidRaw,vorher.paid);
+          ungespeichert=vorher.ungespeichert;
+          if(lastText||wolkeBestand)run();else leereAnzeige();
+          stand('Import nicht gespeichert: '+erg.fehler,true);
+        }
+      }).finally(sperreAus);
+    }
   };
   r.readAsText(f,'utf-8');
 }
@@ -427,6 +442,7 @@ function ladeGastbetraege(f){
    Nichts hier darf den Rechenweg beeinflussen. */
 
 let daten=null, konto=null, objektId=null, objekte=[];
+let abschluesse={};
 /* Alle Schreibvorgänge laufen durch eine Kette. `clearTimeout` stoppt nur einen
    wartenden Timer — hat sein Rückruf den Datenbankaufruf schon begonnen, läuft
    der weiter und schrieb bisher nach einer Wiederherstellung den alten Stand
@@ -468,7 +484,8 @@ function sperreAn(){ sperren++; zeigeSperre(); }
 function sperreAus(){ if(sperren>0) sperren--; zeigeSperre(); }
 function zeigeSperre(){
   document.body.classList.toggle('gesperrt', sperren>0);
-  document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0; });
+  ['monatSchliessen','monatOeffnen','belegpaket'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=sperren>0 || (id==='monatSchliessen'?!!abschluesse[document.getElementById('abschlussMonat').value]:id==='monatOeffnen'?!abschluesse[document.getElementById('abschlussMonat').value]:false);});
+  document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0 || geschlosseneBuchung(el.dataset.key); });
 }
 const $=id=>document.getElementById(id);
 
@@ -520,7 +537,10 @@ async function ladeBestand(){
   let docs;
   // finally, damit die Sperre auch bei einem Fehler genau einmal fällt —
   // gezählt wird, ein vergessenes Herunterzählen sperrte die Felder dauerhaft.
-  try{ docs=await daten.ladeBuchungen(ziel); }
+  try{
+    const [d,a]=await Promise.all([daten.ladeBuchungen(ziel),daten.ladeAbschluesse(ziel)]);
+    docs=d; if(meine===ladeNr && ziel===objektId) abschluesse=a;
+  }
   finally{ sperreAus(); }
   if(meine!==ladeNr || ziel!==objektId) return;      // überholt oder veraltet
   neuerBestand();
@@ -610,8 +630,7 @@ async function importieren(ziel, opt, version, dateiname, text){
     }
     const vm=verschmelzeBuchungen(gespeichert, neu);
     if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
-    await daten.schreibeBuchungen(ziel, vm.schreiben);
-    await daten.speichereEinstellungen(opt);
+    await daten.schreibeBuchungen(ziel, vm.schreiben, {grund:'import',datei:dateiname,einstellungen:opt});
     if(ueberholt()) return;                  // Anzeige gehört jetzt einem anderen Stand
     // Ab hier ist die Datenbank die Quelle; paidRaw hat seinen Zweck erfüllt.
     // Bliebe es stehen, verdeckte es beim nächsten Import die neuen Dateiwerte.
@@ -642,6 +661,7 @@ async function importieren(ziel, opt, version, dateiname, text){
     fuelleStaende();
   }catch(ex){
     stand('Nicht gespeichert: '+ex.message, true);
+    return {fehler:ex.message};
   }
 }
 
@@ -685,8 +705,7 @@ function speichereEingabe(){
     // Anderes Objekt oder anderer Bestand als beim Auslösen — verwerfen.
     if(ziel!==objektId || version!==bestandVersion) return;
     try{
-      await daten.schreibeBuchungen(ziel, docs);
-      await daten.speichereEinstellungen(opt);
+      await daten.schreibeBuchungen(ziel, docs, {grund:'manuell',einstellungen:opt});
       if(ziel!==objektId || version!==bestandVersion) return;
       // Nur die geschriebenen Dokumente in den Bestand übernehmen, den Rest
       // stehen lassen. Vorher ersetzte docs den ganzen Bestand — eine wegen
@@ -736,7 +755,7 @@ $('objekt').onchange=async()=>{
   // Bestand stehen, wäre die Tabelle des alten Objekts weiter bearbeitbar,
   // während objektId schon auf das neue zeigt; das Autospeichern schriebe
   // dann A unter B.
-  lastText=null; wolkeBestand=null;
+  lastText=null; wolkeBestand=null; abschluesse={};
   for(const k in paidRaw) delete paidRaw[k];
   leereAnzeige();
   objektId=$('objekt').value;
@@ -843,11 +862,96 @@ $('objektNeu').onclick=async()=>{
     daten = await import('./daten.js');
     await daten.beobachteAnmeldung(p=>{
       konto=p; zeichneLeiste();
-      if(p) nachAnmeldung(); else { wolkeBestand=null; run(); }
+      if(p) nachAnmeldung(); else { wolkeBestand=null; abschluesse={}; $('monatsarbeit').classList.add('hide'); run(); }
     });
     $('wolke').classList.remove('hide');
   }catch(e){ /* still: ohne Datenbank rechnet das Werkzeug vollständig */ }
 })();
+
+/* Monatsarbeit: Entscheidungen beziehen sich auf den gespeicherten Objektstand. */
+function geschlosseneBuchung(code){
+  const d=(wolkeBestand||[]).find(b=>b.code===code);
+  return d && Object.keys(abschluesse).some(m=>beruehrt(d,m));
+}
+function zeichneMonatsarbeit(res){
+  const box=$('monatsarbeit');
+  if(!konto || !objektId){box.classList.add('hide');return;}
+  box.classList.remove('hide');
+  const auswahl=$('abschlussMonat'),alt=auswahl.value;
+  const monate=[...new Set([...res.months.map(m=>m.month),...Object.keys(abschluesse),
+    ...(wolkeBestand||[]).flatMap(d=>{const a=[];let m=d.von.slice(0,7);for(let i=0;i<120 && m<=d.bis.slice(0,7);i++){
+      if(beruehrt(d,m))a.push(m);m=new Date(Date.UTC(+m.slice(0,4),+m.slice(5,7),1)).toISOString().slice(0,7);
+    }return a;})])].sort();
+  auswahl.innerHTML=monate.map(m=>'<option value="'+m+'">'+m+(abschluesse[m]?' · abgeschlossen':' · offen')+'</option>').join('');
+  if(monate.includes(alt))auswahl.value=alt;
+  const codes=(wolkeBestand||[]).map(d=>d.code).sort(),v=$('verlaufCode').value;
+  $('verlaufCodes').innerHTML=codes.map(c=>'<option value="'+esc(c)+'"></option>').join('');
+  $('verlaufCode').value=v||codes[0]||'';
+  zeigeMonatspruefung();
+}
+function zeigeMonatspruefung(){
+  const monat=$('abschlussMonat').value,geschlossen=abschluesse[monat];
+  $('abschlussVoll').checked=false;$('abschlussPruefung').checked=false;$('abschlussHinweise').checked=false;
+  if(!monat){$('abschlussStatus').textContent='Keine Monate verfügbar.';return;}
+  const stand=geschlossen||monatsStand(wolkeBestand||[],optionen(),monat);
+  $('abschlussStatus').textContent=(geschlossen?'Abgeschlossen am '+geschlossen.abgeschlossen+' · eingefrorener Stand':'Offen · gespeicherter Bestand')+
+    ' · '+stand.naechte+(stand.naechte===1?' Nacht · ':' Nächte · ')+fmt(stand.ortstaxe)+' € Ortstaxe';
+  $('abschlussVergleich').textContent=geschlossen && wolkeBestand && monatsStand(wolkeBestand,optionen(),monat).ortstaxe!==geschlossen.ortstaxe ? 'Die aktuelle Berechnung weicht vom Abschluss ab. Für den abgeschlossenen Stand gilt das Belegpaket.' : '';
+  $('abschlussWarnungen').textContent=stand.hinweise.length?stand.hinweise.join(' | '):'Keine rechnerischen Hinweise. Vollständigkeit und Belege bitte selbst prüfen.';
+  $('abschlussChecks').classList.toggle('hide',!!geschlossen);
+  $('monatSchliessen').disabled=!!geschlossen;
+  $('monatOeffnen').disabled=!geschlossen;
+}
+async function monatsAktion(fn){
+  if(sperren || !konto || !objektId)return;
+  const ziel=objektId;
+  if(ungespeichert){$('abschlussStatus').textContent='Zuerst offene Eingaben speichern oder neu laden.';return;}
+  sperreAn();
+  try{await inReihe(async()=>{
+    if(ziel!==objektId)throw new Error('Objekt gewechselt.');
+    if(ungespeichert)throw new Error('Zuerst offene Eingaben speichern oder neu laden.');
+    await fn(ziel);
+    if(ziel===objektId){abschluesse=await daten.ladeAbschluesse(ziel);run();}
+  });}catch(e){$('abschlussStatus').textContent=e.message;}finally{sperreAus();}
+}
+$('abschlussMonat').onchange=zeigeMonatspruefung;
+$('monatSchliessen').onclick=()=>{
+  const monat=$('abschlussMonat').value, opt=optionen();
+  const pruefung=monatsStand(wolkeBestand||[],opt,monat);
+  const bestaetigung={vollstaendig:$('abschlussVoll').checked,geprueft:$('abschlussPruefung').checked,hinweise:$('abschlussHinweise').checked};
+  return monatsAktion(ziel=>daten.schliesseMonat(ziel,monat,opt,bestaetigung,pruefung));
+};
+$('monatOeffnen').onclick=()=>{
+  const monat=$('abschlussMonat').value;
+  const grund=prompt('Warum wird '+monat+' wieder geöffnet?');
+  if(grund===null)return;
+  return monatsAktion(ziel=>daten.oeffneMonat(ziel,monat,grund));
+};
+$('belegpaket').onclick=()=>{
+  const monat=$('abschlussMonat').value;
+  return monatsAktion(async ziel=>{
+    const aktuell=await daten.ladeAbschluesse(ziel),stand=aktuell[monat];
+    if(!stand)throw new Error('Für ein Belegpaket den Monat zuerst abschließen.');
+    const name=objekte.find(o=>o.id===ziel)?.name||ziel;
+    const blob=belegpaket(stand,name),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download='ortstaxe-'+monat+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  });
+};
+function beschreibeAenderung(e){
+  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags'};
+  const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €':String(v);
+  return (e.vorher?'':'Neu angelegt\n')+(e.nachher?'':'Gelöscht\n')+Object.entries(namen)
+    .filter(([k])=>e.vorher?.[k]!==e.nachher?.[k])
+    .map(([k,n])=>n+': '+wert(k,e.vorher?.[k])+' → '+wert(k,e.nachher?.[k])).join('\n');
+}
+$('verlaufLaden').onclick=async()=>{
+  const ziel=objektId,code=$('verlaufCode').value;if(!ziel||!code)return;
+  $('verlaufInhalt').textContent='Lädt …';
+  try{const liste=await daten.ladeVerlauf(ziel,code);if(ziel!==objektId)return;
+    $('verlaufInhalt').textContent=liste.length?liste.map(e=>e.zeit+' · '+e.grund+(e.datei?' · '+e.datei:'')+'\n'+beschreibeAenderung(e)).join('\n\n'):
+      'Noch keine protokollierten Änderungen. Der Verlauf beginnt mit Einführung dieser Funktion.';
+  }catch(e){$('verlaufInhalt').textContent=e.message;}
+};
 
 /* --- Selbsttest --- Aufruf: index.html?selftest --------------------------
    Die Prüfungen liegen in selftest.js und werden nur bei Bedarf nachgeladen.

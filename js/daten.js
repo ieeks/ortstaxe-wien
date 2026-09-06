@@ -1,3 +1,4 @@
+import {monatsStand, pruefeSperren, festeOptionen, kanonisch} from './abschluss.js';
 /* Firestore-Anbindung: Anmeldung, Lesen, Schreiben, Schnappschüsse.
 
    Diese Datei ist die einzige Stelle, die mit Firebase spricht. Sie rechnet
@@ -119,52 +120,94 @@ export async function ladeBuchungen(objektId){
   return s.docs.map(d => d.data());
 }
 
-/* Schreibt in Stapeln. Firestore nimmt höchstens 500 Schreibvorgänge je
-   Stapel; bei einem Jahresbestand ist das meist einer. */
-export async function schreibeBuchungen(objektId, dokumente){
-  await start();
-  const {f} = teile;
-  const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
-  for(let i=0; i<dokumente.length; i+=400){
-    const stapel = f.writeBatch(db);
-    dokumente.slice(i,i+400).forEach(d => stapel.set(f.doc(basis, String(d.code)), d, {merge:true}));
-    await stapel.commit();
-  }
-  return dokumente.length;
+/* Buchungen, Verlauf und Sperrversion werden gemeinsam geschrieben. */
+export async function schreibeBuchungen(objektId, dokumente, kontext={}){
+  return aendereBestand(objektId,dokumente,[],kontext);
 }
-
-/* Löschen und Schreiben in einem Stapel. Firestore wendet einen writeBatch
-   ganz oder gar nicht an — ohne das hinterlässt eine fehlgeschlagene
-   Wiederherstellung einen Mischbestand: das Löschen war schon durch, das
-   Zurückschreiben nicht. Über 400 Vorgänge wird gestapelt statt atomar; das
-   ist erst bei Beständen jenseits eines Jahres relevant und wird gemeldet. */
-export async function ersetzeBuchungen(objektId, dokumente, zuLoeschen, einstellungen){
-  await start();
-  const {f} = teile;
-  const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
-  const gesamt = dokumente.length + zuLoeschen.length + (einstellungen?1:0);
-  if(gesamt<=400){
-    const stapel = f.writeBatch(db);
-    zuLoeschen.forEach(c => stapel.delete(f.doc(basis, String(c))));
-    dokumente.forEach(d => stapel.set(f.doc(basis, String(d.code)), d));
-    // Die Einstellungen gehören in denselben Vorgang: sonst stehen nach einem
-    // Fehler die Buchungen des alten Standes neben den neuen Einstellungen.
-    if(einstellungen)
-      stapel.set(f.doc(db,'users',uid(),'einstellungen','aktuell'),
-                 Object.assign({schemaVersion:SCHEMA_VERSION}, einstellungen), {merge:true});
-    await stapel.commit();
-    return {atomar:true, anzahl:gesamt};
-  }
-  for(const c of zuLoeschen) await f.deleteDoc(f.doc(basis, String(c)));
-  await schreibeBuchungen(objektId, dokumente);
-  if(einstellungen) await speichereEinstellungen(einstellungen);
-  return {atomar:false, anzahl:gesamt};
+export async function ersetzeBuchungen(objektId,dokumente,zuLoeschen,einstellungen){
+  await aendereBestand(objektId,dokumente,zuLoeschen,{grund:'wiederherstellung',einstellungen});
+  return {atomar:true};
 }
-
-export async function loescheBuchung(objektId, code){
-  await start();
-  const {f} = teile;
-  await f.deleteDoc(f.doc(db,'users',uid(),'objekte',objektId,'buchungen',String(code)));
+export async function loescheBuchung(objektId,code){
+  return aendereBestand(objektId,[],[code],{grund:'loeschen'});
+}
+function pfad(f,o,...rest){return f.doc(db,'users',uid(),'objekte',o,...rest);}
+async function leseArbeitsstand(o){
+  await start(); const {f}=teile, benutzer=uid();
+  const ref=pfad(f,o,'verwaltung','aktuell');
+  const v=await f.getDocFromServer(ref);
+  const docs=await f.getDocsFromServer(f.collection(db,'users',uid(),'objekte',o,'buchungen'));
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+  return {ref,benutzer,meta:v.exists()?v.data():{revision:0,sperren:{}},docs:docs.docs.map(d=>d.data())};
+}
+function groesse(d){
+  if(new TextEncoder().encode(JSON.stringify(d)).length>700000)
+    throw new Error('Dieser Stand ist zu groß. Es wurde nichts gespeichert.');
+}
+async function aendereBestand(o,docs,entfernen,kontext){
+  const stand=await leseArbeitsstand(o), {f}=teile, benutzer=stand.benutzer;
+  const vorher=new Map(stand.docs.map(d=>[d.code,d]));
+  const nach=new Map(vorher); entfernen.forEach(c=>nach.delete(c)); docs.forEach(d=>nach.set(d.code,d));
+  const codes=[...new Set([...entfernen,...docs.map(d=>d.code)])];
+  const geaendert=codes.filter(c=>kanonisch(vorher.get(c)||null)!==kanonisch(nach.get(c)||null));
+  if(geaendert.length>400)throw new Error('Mehr als 400 Änderungen auf einmal. Bitte kleinere Dateien verwenden; nichts gespeichert.');
+  const zeit=new Date().toISOString(), ereignis=crypto.randomUUID();
+  await f.runTransaction(db,async tx=>{
+    const aktuell=await tx.get(stand.ref), meta=aktuell.exists()?aktuell.data():{revision:0,sperren:{}};
+    if(meta.revision!==stand.meta.revision)throw new Error('Bestand wurde andernorts geändert. Neu laden und erneut versuchen.');
+    if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+    pruefeSperren(meta.sperren,stand.docs,[...nach.values()],kontext.einstellungen);
+    for(const code of geaendert){
+      const ref=pfad(f,o,'buchungen',code);
+      if(nach.has(code))tx.set(ref,nach.get(code));else tx.delete(ref);
+    }
+    if(geaendert.length){
+      const eintrag={codes:geaendert,zeit,benutzer,grund:kontext.grund||'manuell',datei:kontext.datei||null,
+        aenderungen:geaendert.map(code=>({code,vorher:vorher.get(code)||null,nachher:nach.get(code)||null}))};
+      groesse(eintrag);tx.set(pfad(f,o,'verlauf',ereignis),eintrag);
+    }
+    if(kontext.einstellungen)tx.set(f.doc(db,'users',benutzer,'einstellungen','aktuell'),
+      {...festeOptionen(kontext.einstellungen),schemaVersion:SCHEMA_VERSION},{merge:true});
+    tx.set(stand.ref,{...meta,revision:meta.revision+1});
+  });
+  return docs.length;
+}
+export async function ladeAbschluesse(o){
+  await start();const d=await teile.f.getDocFromServer(pfad(teile.f,o,'verwaltung','aktuell'));
+  return d.exists()?d.data().sperren||{}:{};
+}
+export async function schliesseMonat(o,monat,opt,bestaetigung,erwartet){
+  if(!bestaetigung.vollstaendig || !bestaetigung.geprueft)throw new Error('Vollständigkeit und Prüfung bestätigen.');
+  const arbeitsstand=await leseArbeitsstand(o),{f}=teile;
+  const stand=monatsStand(arbeitsstand.docs,opt,monat);
+  if(kanonisch(stand)!==kanonisch(erwartet))throw new Error('Prüfstand geändert. Bitte neu prüfen.');
+  if(stand.hinweise.length && !bestaetigung.hinweise)throw new Error('Hinweise zuerst prüfen und bestätigen.');
+  stand.abgeschlossen=new Date().toISOString();stand.benutzer=uid();stand.bestaetigung=bestaetigung;
+  const protokoll=pfad(f,o,'abschlusshistorie',crypto.randomUUID());
+  await f.runTransaction(db,async tx=>{
+    const d=await tx.get(arbeitsstand.ref),m=d.exists()?d.data():{revision:0,sperren:{}};
+    if(m.revision!==arbeitsstand.meta.revision)throw new Error('Bestand geändert. Neu prüfen.');
+    if(m.sperren[monat])throw new Error('Monat ist bereits abgeschlossen.');
+    const neu={...m,revision:m.revision+1,sperren:{...m.sperren,[monat]:stand}};groesse(neu);
+    tx.set(arbeitsstand.ref,neu);tx.set(protokoll,{aktion:'abschluss',monat,stand});
+  });return stand;
+}
+export async function oeffneMonat(o,monat,grund){
+  if(!grund || grund.trim().length<5)throw new Error('Bitte einen nachvollziehbaren Grund angeben (mindestens 5 Zeichen).');
+  await start();const {f}=teile,ref=pfad(f,o,'verwaltung','aktuell');
+  const protokoll=pfad(f,o,'abschlusshistorie',crypto.randomUUID());
+  await f.runTransaction(db,async tx=>{
+    const d=await tx.get(ref),m=d.exists()?d.data():null;
+    if(!m?.sperren[monat])throw new Error('Monat ist nicht abgeschlossen.');
+    const sperren={...m.sperren};delete sperren[monat];
+    tx.set(ref,{...m,revision:m.revision+1,sperren});
+    tx.set(protokoll,{aktion:'wiedereroeffnung',monat,grund:grund.trim(),zeit:new Date().toISOString(),stand:m.sperren[monat],benutzer:uid()});
+  });
+}
+export async function ladeVerlauf(o,code){
+  await start();const {f}=teile;
+  const s=await f.getDocs(f.query(f.collection(db,'users',uid(),'objekte',o,'verlauf'),f.where('codes','array-contains',code)));
+  return s.docs.map(d=>d.data()).map(e=>({...e,...e.aenderungen.find(a=>a.code===code)})).sort((a,b)=>b.zeit.localeCompare(a.zeit));
 }
 
 /* --- Schnappschüsse --- */

@@ -58,6 +58,7 @@ const db   = () => seite.evaluate(() => JSON.parse(JSON.stringify(window.__db)))
 await seite.goto(url, {waitUntil: 'networkidle'});
 await seite.waitForFunction(() => window.__db);
 
+if(!process.argv.includes('--monatsarbeit')){
 console.log('\nEingetippte Gastbeträge werden gespeichert');
 await lade(KOPF + 'HM1;Bestätigt;Anna;05.08.2026;06.08.2026;100,00;\n');
 await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(700);
@@ -465,6 +466,34 @@ await seite.waitForTimeout(2600);
 t('der getippte Wert 999 steht in der Datenbank', (await db()).buchungen[oY].HY1.gastbetrag, 999);
 t('und ist als manuell vermerkt', (await db()).buchungen[oY].HY1.gastbetragQuelle, 'manuell');
 
+
+}
+console.log('\nMonatsabschluss, Sperre, Belegpaket und Verlauf');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(()=>window.__db);
+await lade(KOPF+'MF1;Bestätigt;Maria;05.08.2026;06.08.2026;100,00;150,00\n');
+await seite.waitForTimeout(1200);
+await seite.selectOption('#abschlussMonat','2026-08');
+await seite.click('#monatSchliessen');
+t('ohne Bestätigung kein Abschluss',Object.keys((await db()).abschluesse||{}).length,0);
+await seite.check('#abschlussVoll');await seite.check('#abschlussPruefung');await seite.check('#abschlussHinweise');
+await seite.click('#monatSchliessen');await seite.waitForTimeout(500);
+const mo=Object.keys((await db()).buchungen)[0];
+t('Monat gespeichert',!!(await db()).abschluesse[mo]['2026-08'],true);
+t('Betragseingabe gesperrt',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.disabled),true);
+const downloadWartet=seite.waitForEvent('download');await seite.click('#belegpaket');
+const download=await downloadWartet;
+t('Belegpaket ZIP',download.suggestedFilename(),'ortstaxe-2026-08.zip');
+await lade(KOPF+'MF1;Bestätigt;Maria;05.08.2026;06.08.2026;100,00;200,00\n');await seite.waitForTimeout(800);
+t('Import überschreibt Abschluss nicht',(await db()).buchungen[mo].MF1.gastbetrag,150);
+await seite.click('#monatsarbeit details summary');
+await seite.click('#verlaufLaden');await seite.waitForTimeout(200);
+t('Verlauf enthält Import',/import/.test(await seite.textContent('#verlaufInhalt')),true);
+// Existing dialog handler supplies a nonempty reason.
+await seite.click('#monatOeffnen');await seite.waitForTimeout(500);
+t('bewusst wieder geöffnet',!!(await db()).abschluesse[mo]['2026-08'],false);
+
+if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
 console.log('\n' + gut + ' bestanden · ' + schlecht + ' fehlgeschlagen');

@@ -1,3 +1,4 @@
+import {monatsStand,pruefeSperren,kanonisch} from './abschluss.js';
 /* Attrappe der Firestore-Schicht für test/integration.mjs.
 
    Ersetzt js/daten.js: hält alles im Speicher und legt den Zustand
@@ -23,8 +24,13 @@ export async function ladeBuchungen(objektId){
 }
 /* Schreibverzögerung einspeisbar: window.__schreibVerzug = 800 lässt einen
    begonnenen Schreibvorgang erst später abschließen. */
-export async function schreibeBuchungen(objektId,docs){
+export async function schreibeBuchungen(objektId,docs,kontext={}){
   if(window.__schreibVerzug) await new Promise(r=>setTimeout(r,window.__schreibVerzug));
+  const alt=Object.values(db.buchungen[objektId]||{}), neu={...(db.buchungen[objektId]||{})};docs.forEach(d=>neu[d.code]=d);
+  pruefeSperren(db.abschluesse?.[objektId],alt,Object.values(neu),kontext.einstellungen);
+  db.verlauf=db.verlauf||[];
+  for(const d of docs){const a=(db.buchungen[objektId]||{})[d.code]||null;if(kanonisch(a)!==kanonisch(d))db.verlauf.push({objektId,code:d.code,zeit:new Date().toISOString(),grund:kontext.grund||'manuell',vorher:a,nachher:d,datei:kontext.datei||null});}
+  if(kontext.einstellungen)await speichereEinstellungen(kontext.einstellungen);
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
   db.schreibvorgaenge++;
@@ -34,6 +40,7 @@ export async function schreibeBuchungen(objektId,docs){
    lässt sich ein Schreibfehler gezielt einspeisen. */
 export async function ersetzeBuchungen(objektId,docs,zuLoeschen,einstellungen){
   if(window.__fehlerBeimSchreiben) throw new Error('simulierter Schreibfehler');
+  pruefeSperren(db.abschluesse?.[objektId],Object.values(db.buchungen[objektId]||{}),docs,einstellungen);
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   zuLoeschen.forEach(c=>{ delete db.buchungen[objektId][c]; });
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
@@ -60,3 +67,16 @@ export async function ladeSchnappschuss(objektId,z){
   return db.schnappschuesse[objektId][z];
 }
 export { alsBuchungsdokument };
+
+export async function ladeAbschluesse(o){return db.abschluesse?.[o]||{};}
+export async function schliesseMonat(o,m,opt,b,erwartet){
+  if(!b.vollstaendig||!b.geprueft)throw new Error('Vollständigkeit und Prüfung bestätigen.');
+  const s=monatsStand(Object.values(db.buchungen[o]||{}),opt,m);
+  if(kanonisch(s)!==kanonisch(erwartet))throw new Error('Prüfstand geändert.');
+  if(s.hinweise.length&&!b.hinweise)throw new Error('Hinweise zuerst prüfen und bestätigen.');
+  s.abgeschlossen=new Date().toISOString();s.benutzer='u1';s.bestaetigung=b;
+  db.abschluesse=db.abschluesse||{};db.abschluesse[o]=db.abschluesse[o]||{};db.abschluesse[o][m]=s;
+  return s;
+}
+export async function oeffneMonat(o,m,grund){if(!grund||grund.trim().length<5)throw new Error('Bitte Grund angeben.');delete db.abschluesse[o][m];}
+export async function ladeVerlauf(o,c){return (db.verlauf||[]).filter(e=>e.objektId===o&&e.code===c);}
