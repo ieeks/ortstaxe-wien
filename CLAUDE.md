@@ -301,3 +301,9 @@ Kein automatisches Wiederöffnen gesperrter Monate, keine Teilwrites bei Größe
   unveränderlichen Belege. `ladeAbschluss` holt den Volltext für das Belegpaket.
 - Verlaufseinträge werden nach Größe aufgeteilt, ohne Werte wegzulassen, und
   zusammen mit den Buchungen committed.
+
+Bei Netzfehlern zeigt die Buchungsansicht vorhandene SDK-Cache-Daten ausdrücklich
+als möglicherweise veralteten, schreibgeschützten Offline-Stand. Erst erneutes
+Online-Laden gibt Bearbeitung und Monatsaktionen frei. Berechtigungsfehler
+fallen nicht auf den Cache zurück. Der Anzeige-Cache füllt niemals den
+revisionsgebundenen Arbeitsbestand; Abmelden leert die Sitzungscaches.

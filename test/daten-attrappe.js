@@ -17,7 +17,9 @@ export async function ladeEinstellungen(){ return db.einstellungen; }
 export async function speichereEinstellungen(e){ db.einstellungen=festeOptionen(e); }
 /* Verzögerung je Objekt einstellbar: window.__ladeVerzug = {o1: 400} lässt die
    Antwort für o1 später eintreffen als eine danach gestellte Anfrage. */
+export function istOfflineStand(){return !!window.__offlineAnzeige;}
 export async function ladeBuchungen(objektId){
+  if(window.__ladeFehler)throw new Error('simulierter Ladefehler');
   const v=(window.__ladeVerzug||{})[objektId]||0;
   if(v) await new Promise(r=>setTimeout(r,v));
   return Object.values(db.buchungen[objektId]||{});

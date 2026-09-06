@@ -499,6 +499,14 @@ t('bewusst wieder geöffnet',!!(await db()).abschluesse[mo]['2026-08'],false);
 
 await seite.evaluate(()=>{const e=document.getElementById('abschlussMonat');e.innerHTML='';e.dispatchEvent(new Event('change'));});
 t('Leere Monatsauswahl sperrt alle Monatsknöpfe',await seite.$$eval('#monatSchliessen,#monatOeffnen,#belegpaket',a=>a.every(e=>e.disabled)),true);
+await seite.evaluate(async()=>{window.__offlineAnzeige=true;await document.getElementById('objekt').onchange();});
+t('Offline-Stand sichtbar gekennzeichnet',/Offline-Ansicht/.test(await seite.textContent('#wolkeStand')),true);
+t('Offline-Gastbetrag schreibgeschützt',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.disabled),true);
+t('Offline-Monatsaktionen gesperrt',await seite.$$eval('#monatSchliessen,#monatOeffnen,#belegpaket',a=>a.every(e=>e.disabled)),true);
+await seite.evaluate(async()=>{window.__offlineAnzeige=false;await document.getElementById('objekt').onchange();});
+t('Online wieder bearbeitbar',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.disabled),false);
+await seite.evaluate(async()=>{window.__ladeFehler=true;await document.getElementById('objekt').onchange();});
+t('Ladefehler verständlich angezeigt',/Laden fehlgeschlagen/.test(await seite.textContent('#wolkeStand')),true);
 if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;

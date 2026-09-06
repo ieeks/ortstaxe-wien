@@ -190,7 +190,7 @@ function render(res, opt){
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
         +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
-        +(sperren || geschlosseneBuchung(b.code)?'disabled ':'')
+        +(sperren || offlineAnzeige() || geschlosseneBuchung(b.code)?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
       +'<td class="num"><strong>'+fmt(round2(b.tax))+'</strong></td></tr>';
@@ -204,7 +204,7 @@ function render(res, opt){
       // anzuzeigen und still zu verwerfen. Das Feld ist dabei auch im DOM
       // gesperrt; hier steht die Sperre für alles, was das Ereignis anders
       // auslöst.
-      if(sperren || geschlosseneBuchung(el.dataset.key)){ el.value=el.defaultValue; return; }
+      if(sperren || offlineAnzeige() || geschlosseneBuchung(el.dataset.key)){ el.value=el.defaultValue; return; }
       // Ein geleertes Feld hebt die Überschreibung auf, statt als ausdrückliche
       // Null zu gelten. Vorher blieb '' liegen, behielt Vorrang vor der Datei
       // und die Rechnung fiel auf die Schätzung zurück — die Warnung riet
@@ -485,7 +485,7 @@ function sperreAus(){ if(sperren>0) sperren--; zeigeSperre(); }
 function zeigeSperre(){
   document.body.classList.toggle('gesperrt', sperren>0);
   zeigeMonatsKnopfsperre();
-  document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0 || geschlosseneBuchung(el.dataset.key); });
+  document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0 || offlineAnzeige() || geschlosseneBuchung(el.dataset.key); });
 }
 const $=id=>document.getElementById(id);
 
@@ -551,7 +551,7 @@ async function ladeBestand(){
   // einblendet, ohne neu zu rendern.
   if(!wolkeBestand && !lastText) leereAnzeige();
   else run();
-  stand(docs.length ? docs.length+' Buchungen aus der Datenbank' : 'noch nichts gespeichert');
+  stand(offlineAnzeige() ? 'Offline-Ansicht aus dem lokalen Cache · möglicherweise veraltet · nur Lesen. Zum Bearbeiten online erneut laden.' : docs.length ? docs.length+' Buchungen aus der Datenbank' : 'noch nichts gespeichert',offlineAnzeige());
   fuelleStaende();
 }
 
@@ -677,7 +677,7 @@ function speichereEingabe(){
   // anderen Wege hierher (Optionsfelder, nachgeladene Gastbeträge) sind im DOM
   // nicht gesperrt. Der Mutationslauf zeigt sie als ungeprüft: kein Ablauf
   // hängt allein an ihr.
-  if(!(daten && konto && objektId) || !wolkeBestand || sperren) return;
+  if(!(daten && konto && objektId) || !wolkeBestand || sperren || offlineAnzeige()) return;
   stand('nicht gespeichert', true);
   clearTimeout(tippUhr);
   // Ziel UND Daten jetzt festhalten, nicht erst wenn der Timer abläuft. Sonst
@@ -759,7 +759,9 @@ $('objekt').onchange=async()=>{
   for(const k in paidRaw) delete paidRaw[k];
   leereAnzeige();
   objektId=$('objekt').value;
-  await ladeBestand();
+  const ziel=objektId;
+  try{await ladeBestand();}
+  catch(e){if(ziel===objektId)stand('Laden fehlgeschlagen: '+e.message,true);}
 };
 
 /* Frühere Stände anbieten. Ein Schnappschuss, den man nicht zurückspielen
@@ -867,6 +869,7 @@ $('objektNeu').onclick=async()=>{
 })();
 
 /* Monatsarbeit: Entscheidungen beziehen sich auf den gespeicherten Objektstand. */
+function offlineAnzeige(){return !!(konto && objektId && daten?.istOfflineStand?.(objektId));}
 function geschlosseneBuchung(code){
   const d=(wolkeBestand||[]).find(b=>b.code===code);
   return d && Object.keys(abschluesse).some(m=>beruehrt(d,m));
@@ -889,7 +892,7 @@ function zeichneMonatsarbeit(res){
 }
 function zeigeMonatsKnopfsperre(){
   const monat=$('abschlussMonat').value,geschlossen=!!abschluesse[monat];
-  const gesperrt=sperren>0 || !monat || !konto || !objektId;
+  const gesperrt=sperren>0 || offlineAnzeige() || !monat || !konto || !objektId;
   $('monatSchliessen').disabled=gesperrt||geschlossen;
   $('monatOeffnen').disabled=gesperrt||!geschlossen;
   $('belegpaket').disabled=gesperrt||!geschlossen;
@@ -908,7 +911,7 @@ function zeigeMonatspruefung(){
 
 }
 async function monatsAktion(fn){
-  if(sperren || !konto || !objektId)return;
+  if(sperren || offlineAnzeige() || !konto || !objektId)return;
   const ziel=objektId;
   if(ungespeichert){$('abschlussStatus').textContent='Zuerst offene Eingaben speichern oder neu laden.';return;}
   sperreAn();

@@ -21,6 +21,20 @@ let app = null, db = null, auth = null;
 // Nur Sitzungsspeicher, nach Benutzer und Objekt getrennt, immer mit Revision.
 const arbeitsCache=new Map();
 const cacheKey=o=>uid()+'/'+o;
+// Anzeigeherkunft ist keine vertrauenswürdige Schreibgrundlage.
+const leseHerkunft=new Map();
+const netzfehler=e=>['unavailable','deadline-exceeded'].includes(e?.code);
+function merkeLesen(o,feld,cache,benutzer){
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+  const key=benutzer+'/'+o;
+  leseHerkunft.set(key,{...leseHerkunft.get(key),[feld]:cache});
+  if(cache)arbeitsCache.delete(key);
+}
+export function istOfflineStand(o){
+  const h=auth?.currentUser && leseHerkunft.get(cacheKey(o));
+  return !!(h?.buchungen || h?.abschluesse);
+}
+function leereSitzung(){arbeitsCache.clear();leseHerkunft.clear();}
 
 /* Das SDK wird einmal geladen und danach wiederverwendet. Schlägt der Import
    fehl, ist fast immer die gepinnte Version in firebase-config.js schuld —
@@ -60,7 +74,7 @@ async function start(){
 export async function beobachteAnmeldung(rueckruf){
   await start();
   const {u} = teile;
-  return u.onAuthStateChanged(auth, p => rueckruf(p ? {uid:p.uid, name:p.displayName||p.email||'', bild:p.photoURL||''} : null));
+  return u.onAuthStateChanged(auth, p => {leereSitzung();rueckruf(p ? {uid:p.uid, name:p.displayName||p.email||'', bild:p.photoURL||''} : null);});
 }
 
 export async function anmelden(){
@@ -77,7 +91,7 @@ export async function anmelden(){
   }
 }
 
-export async function abmelden(){ await start(); await teile.u.signOut(auth); }
+export async function abmelden(){ await start(); await teile.u.signOut(auth); leereSitzung(); }
 
 function uid(){
   if(!auth || !auth.currentUser) throw new Error('Nicht angemeldet.');
@@ -112,7 +126,16 @@ export async function ladeEinstellungen(){
 /* --- Buchungen --- */
 
 export async function ladeBuchungen(objektId){
-  return structuredClone((await leseArbeitsstand(objektId,true)).docs);
+  await start();const benutzer=uid();
+  try{
+    const stand=await leseArbeitsstand(objektId,true);
+    merkeLesen(objektId,'buchungen',false,benutzer);return structuredClone(stand.docs);
+  }catch(e){
+    if(!netzfehler(e))throw e;
+    const s=await teile.f.getDocsFromCache(teile.f.collection(db,'users',benutzer,'objekte',objektId,'buchungen'));
+    merkeLesen(objektId,'buchungen',true,benutzer);
+    return s.docs.map(d=>d.data());
+  }
 }
 
 /* Buchungen, Verlauf und Sperrversion werden gemeinsam geschrieben. */
@@ -121,7 +144,6 @@ export async function schreibeBuchungen(objektId, dokumente, kontext={}){
 }
 export async function ersetzeBuchungen(objektId,dokumente,zuLoeschen,einstellungen){
   await aendereBestand(objektId,dokumente,zuLoeschen,{grund:'wiederherstellung',einstellungen});
-  return {atomar:true};
 }
 export async function loescheBuchung(objektId,code){
   return aendereBestand(objektId,[],[code],{grund:'loeschen'});
@@ -139,6 +161,7 @@ async function leseArbeitsstand(o,neuLaden=false){
   const meta=v.exists()?v.data():{revision:0,sperren:{}};
   if((danach.exists()?danach.data().revision:0)!==meta.revision)throw new Error('Bestand während des Ladens geändert. Bitte erneut laden.');
   const stand={benutzer,meta,docs:docs.docs.map(d=>d.data())};
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
   arbeitsCache.set(key,structuredClone(stand));
   return {...stand,ref};
 }
@@ -159,6 +182,7 @@ function teileProtokoll(aenderungen,rahmen){
   if(gruppe.length)teile.push(pack(gruppe));return teile;
 }
 async function aendereBestand(o,docs,entfernen,kontext){
+  if(istOfflineStand(o))throw new Error('Offline-Stand ist schreibgeschützt. Bitte online erneut laden.');
   const stand=await leseArbeitsstand(o), {f}=teile, benutzer=stand.benutzer;
   const vorher=new Map(stand.docs.map(d=>[d.code,d]));
   const nach=new Map(vorher); entfernen.forEach(c=>nach.delete(c)); docs.forEach(d=>nach.set(d.code,d));
@@ -187,12 +211,18 @@ async function aendereBestand(o,docs,entfernen,kontext){
     neueMeta={...meta,revision:meta.revision+1};
     tx.set(stand.ref,neueMeta);
   });}catch(e){arbeitsCache.delete(benutzer+'/'+o);throw e;}
-  arbeitsCache.set(benutzer+'/'+o,structuredClone({benutzer,meta:neueMeta,docs:[...nach.values()]}));
+  if(auth?.currentUser?.uid===benutzer)arbeitsCache.set(benutzer+'/'+o,structuredClone({benutzer,meta:neueMeta,docs:[...nach.values()]}));
   return docs.length;
 }
 export async function ladeAbschluesse(o){
-  await start();const d=await teile.f.getDocFromServer(pfad(teile.f,o,'verwaltung','aktuell'));
-  return d.exists()?d.data().sperren||{}:{};
+  await start();const benutzer=uid(),ref=pfad(teile.f,o,'verwaltung','aktuell');let d;
+  try{d=await teile.f.getDocFromServer(ref);merkeLesen(o,'abschluesse',false,benutzer);}
+  catch(e){
+    if(!netzfehler(e))throw e;
+    try{d=await teile.f.getDocFromCache(ref);}catch(cacheFehler){if(!netzfehler(cacheFehler))throw cacheFehler;}
+    merkeLesen(o,'abschluesse',true,benutzer);
+  }
+  return d?.exists()?d.data().sperren||{}:{};
 }
 export async function ladeAbschluss(o,monat){
   const sperren=await ladeAbschluesse(o),s=sperren[monat];

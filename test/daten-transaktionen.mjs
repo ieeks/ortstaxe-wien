@@ -9,9 +9,13 @@ import {monatsStand} from '../js/abschluss.js';
 const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'ortstaxe-daten-'));
 const kopie=structuredClone, store=new Map();let vorTransaktion=null,fehler=false,sammlungsReads=0;
 const snap=p=>({exists:()=>store.has(p),data:()=>kopie(store.get(p))});
+let netzCode=null;const cache=new Map(),auth={currentUser:{uid:'u1'}};
+const netz=()=>{if(netzCode)throw Object.assign(new Error(netzCode),{code:netzCode});};
 const f={doc:(_, ...p)=>p.join('/'),collection:(_, ...p)=>p.join('/'),
-  getDocFromServer:async p=>snap(p),getDoc:async p=>snap(p),
-  getDocsFromServer:async p=>{sammlungsReads++;return {docs:[...store].filter(([k])=>k.startsWith(p+'/')&&!k.slice(p.length+1).includes('/')).map(([k,v])=>({id:k.split('/').at(-1),data:()=>kopie(v)}))};},
+  getDocFromServer:async p=>{netz();return snap(p);},getDoc:async p=>snap(p),
+  getDocsFromServer:async p=>{netz();sammlungsReads++;return {docs:[...store].filter(([k])=>k.startsWith(p+'/')&&!k.slice(p.length+1).includes('/')).map(([k,v])=>({id:k.split('/').at(-1),data:()=>kopie(v)}))};},
+  getDocFromCache:async p=>({exists:()=>cache.has(p),data:()=>kopie(cache.get(p))}),
+  getDocsFromCache:async p=>({docs:[...cache].filter(([k])=>k.startsWith(p+'/')&&!k.slice(p.length+1).includes('/')).map(([k,v])=>({data:()=>kopie(v)}))}),
   where:(field,op,value)=>({field,op,value}),query:(p,...q)=>({p,q}),
   getDocs:async ({p,q})=>({docs:[...store].filter(([k,v])=>k.startsWith(p+'/')&&q.every(x=>v[x.field]?.includes(x.value))).map(([k,v])=>({data:()=>kopie(v)}))}),
   runTransaction:async(_,fn)=>{
@@ -19,7 +23,7 @@ const f={doc:(_, ...p)=>p.join('/'),collection:(_, ...p)=>p.join('/'),
     const staged=[];await fn({get:async p=>snap(p),set:(p,d,opt)=>staged.push(()=>store.set(p,kopie(opt?.merge?{...store.get(p),...d}:d))),delete:p=>staged.push(()=>store.delete(p))});
     if(fehler)throw new Error('Simulierter Commitfehler');for(const write of staged)write();
   },initializeFirestore:()=>({}),persistentLocalCache:()=>({})};
-globalThis.__abschlussSDK={f,a:{getApps:()=>[],initializeApp:()=>({})},u:{getAuth:()=>({currentUser:{uid:'u1'}})}};
+globalThis.__abschlussSDK={f,a:{getApps:()=>[],initializeApp:()=>({})},u:{getAuth:()=>auth,signOut:async()=>{auth.currentUser=null;}}};
 for(const n of ['kern.js','abschluss.js','firebase-config.js'])await fs.copyFile(new URL('../js/'+n,import.meta.url),path.join(tmp,n));
 let src=await fs.readFile(new URL('../js/daten.js',import.meta.url),'utf8');
 src=src.replace(/async function sdk\(\)\{[\s\S]*?\n\}\n\nasync function start/, 'async function sdk(){ teile=globalThis.__abschlussSDK; return teile; }\n\nasync function start');
@@ -73,5 +77,23 @@ try{
  const vorEdit=sammlungsReads;
  await d.schreibeBuchungen('performance',[{...a,objektId:'performance',gastbetrag:175}],{einstellungen:opt});
  ok(sammlungsReads===vorEdit);
+ // Cached display may be stale, and must never authorize a write.
+ for(const [k,v] of store)cache.set(k,kopie(v));
+ netzCode='unavailable';
+ ok((await d.ladeBuchungen('a')).length===2);
+ await d.ladeAbschluesse('a');ok(d.istOfflineStand('a'));
+ await block(()=>d.schreibeBuchungen('a',[{...a,gastbetrag:999}],{einstellungen:opt}));
+ netzCode=null;
+ await block(()=>d.schreibeBuchungen('a',[{...a,gastbetrag:999}],{einstellungen:opt}));
+ await d.ladeBuchungen('a');ok(d.istOfflineStand('a'));
+ await d.ladeAbschluesse('a');ok(!d.istOfflineStand('a'));
+ netzCode='permission-denied';
+ await assert.rejects(()=>d.ladeBuchungen('a'),/permission-denied/);tests++;
+ await assert.rejects(()=>d.ladeAbschluesse('a'),/permission-denied/);tests++;
+ netzCode=null;
+ await d.abmelden();auth.currentUser={uid:'u1'};
+ const vorLogin=sammlungsReads;
+ await d.schreibeBuchungen('performance',[{...a,objektId:'performance',gastbetrag:176}],{einstellungen:opt});
+ ok(sammlungsReads===vorLogin+1);
  console.log(tests+' Transaktionsprüfungen bestanden');
 }finally{await fs.rm(tmp,{recursive:true,force:true});delete globalThis.__abschlussSDK;}
