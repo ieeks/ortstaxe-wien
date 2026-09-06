@@ -1,0 +1,122 @@
+# Rollt firestore.rules und firestore.indexes.json aus.
+#
+# Warum es das gibt: Ein Merge rollt über GitHub Pages nur die Anwendung aus.
+# Die Regeln liegen im Firebase-Projekt und wurden bisher von Hand deployt —
+# vergisst man das, laufen neue Anwendung und alte Regeln auseinander, und das
+# Werkzeug meldet „Missing or insufficient permissions“.
+#
+# Einmalig einzurichten (siehe README, Abschnitt „Regeln ausrollen“):
+#   Repository-Secret FIREBASE_SERVICE_ACCOUNT mit dem JSON-Schlüssel eines
+#   Dienstkontos, das die Rolle „Firebase Rules Admin“ hat.
+#
+# Ohne dieses Secret bricht nur der Deploy-Schritt ab, mit einer klaren Meldung.
+# Die Prüfung gegen den Emulator läuft auch ohne jede Anmeldung.
+
+name: Firestore-Regeln
+
+on:
+  # Ausgeschrieben statt per YAML-Anker: GitHub Actions wertet Anker nicht aus.
+  push:
+    branches: [main]
+    paths:
+      - firestore.rules
+      - firestore.indexes.json
+      - firebase.json
+      - test/firestore-regeln.mjs
+      - .github/workflows/firestore-regeln.yml
+  pull_request:
+    paths:
+      - firestore.rules
+      - firestore.indexes.json
+      - firebase.json
+      - test/firestore-regeln.mjs
+      - .github/workflows/firestore-regeln.yml
+  # Von Hand auslösbar — auch aus der GitHub-App am Telefon.
+  workflow_dispatch:
+
+# Nur lesen. Der Workflow schreibt nichts ins Repository zurück.
+permissions:
+  contents: read
+
+# Zwei gleichzeitige Deploys würden sich gegenseitig überholen. Laufende
+# Durchgänge werden nicht abgebrochen: ein halb ausgerollter Regelstand ist
+# schlimmer als ein überflüssiger zweiter Durchgang.
+concurrency:
+  group: firestore-regeln
+  cancel-in-progress: false
+
+jobs:
+  pruefen:
+    name: Regeln gegen den Emulator prüfen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Der Firestore-Emulator ist ein Java-Prozess.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Ein „demo-“-Projekt läuft vollständig offline: keine Anmeldung, kein
+      # Zugriff auf das Produktivprojekt. Dieselbe Projektkennung, die
+      # test/firestore-regeln.mjs in seinen Token erwartet.
+      - name: Rules-Prüfungen
+        run: >
+          npx --yes firebase-tools@15 emulators:exec
+          --only firestore
+          --project demo-ortstaxe-review
+          "node test/firestore-regeln.mjs"
+
+  deployen:
+    name: Regeln veröffentlichen
+    needs: pruefen
+    # Auf Pull Requests wird nur geprüft, nie ausgerollt.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Erst prüfen, dann schreiben: sonst kommt statt einer verständlichen
+      # Meldung ein Anmeldefehler aus dem Firebase-CLI zurück.
+      - name: Zugangsdaten vorhanden?
+        env:
+          SCHLUESSEL: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SCHLUESSEL" ]; then
+            echo "::error::Das Repository-Secret FIREBASE_SERVICE_ACCOUNT fehlt. Einrichtung siehe README, Abschnitt „Regeln ausrollen“. Die Regeln wurden NICHT ausgerollt."
+            exit 1
+          fi
+
+      # Der Schlüssel landet außerhalb des Arbeitsverzeichnisses, damit ihn
+      # kein späterer Schritt versehentlich einliest oder mit ausliefert.
+      - name: Anmeldung vorbereiten
+        env:
+          SCHLUESSEL: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SCHLUESSEL" > "$RUNNER_TEMP/firebase-schluessel.json"
+          chmod 600 "$RUNNER_TEMP/firebase-schluessel.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-schluessel.json" >> "$GITHUB_ENV"
+
+      - name: Ausrollen
+        run: >
+          npx --yes firebase-tools@15 deploy
+          --only firestore:rules,firestore:indexes
+          --project ortstaxe-wien
+          --non-interactive
+
+      # Auch wenn der Deploy fehlschlägt.
+      - name: Anmeldung entfernen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-schluessel.json"
+
+      - name: Hinweis
+        run: echo "Regeln ausgerollt. Offene Tabs des Werkzeugs müssen neu geladen werden — alter Code schreibt ohne erhöhte Objektversion und wird von den neuen Regeln abgewiesen."

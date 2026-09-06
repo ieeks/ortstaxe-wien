@@ -66,7 +66,8 @@ Oberfläche mit Chromium durch.
 
 Playwright ist reines Entwicklungswerkzeug. **Ausgeliefert wird weiterhin ohne
 Build und ohne Abhängigkeiten** — die Regel oben gilt für das Werkzeug, nicht
-für die Testwerkbank.
+für die Testwerkbank. Dasselbe gilt für `firebase-tools` im Regel-Workflow: es
+läuft nur in der CI und nie im Browser des Nutzers.
 
 Wer eine Funktion an der Oberfläche ergänzt, ergänzt hier einen Fall. Ein Test,
 der seine Eingabe selbst konstruiert statt sie durch den echten Pfad laufen zu
@@ -139,7 +140,15 @@ wenige hundert Buchungen, und ein einzelnes Dokument spielt sich ohne
 Zusammensetzen zurück.
 
 Die neuen `firestore.rules` sind mit `test/firestore-regeln.mjs` gegen den lokalen
-Firestore-Emulator geprüft (14 Fälle). Die echte Anmeldung bleibt separat zu prüfen.
+Firestore-Emulator geprüft. Die echte Anmeldung bleibt separat zu prüfen.
+
+**Die Regeln rollt ein eigener Workflow aus, nicht der Merge.** GitHub Pages
+liefert nur `index.html` und `js/`; `firestore.rules` lebt im Firebase-Projekt.
+Wer die Regeln ändert, ohne sie auszurollen, erzeugt „neue Anwendung, alte
+Regeln“ — und das meldet sich als *Missing or insufficient permissions*, schon
+beim Laden, weil `leseArbeitsstand` als Erstes `verwaltung/aktuell` liest.
+`.github/workflows/firestore-regeln.yml` prüft deshalb erst gegen den Emulator
+und rollt nur bei bestandener Prüfung aus. Einrichtung siehe README.
 
 Beim Import wird zusammengeführt, **nie ersetzt**: ein Export über einen einzelnen
 Monat darf den Rest des Jahres nicht löschen. Ein von Hand gesetzter Gastbetrag
