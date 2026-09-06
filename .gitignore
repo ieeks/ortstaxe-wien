@@ -8,3 +8,7 @@ prompt.md
 # Der Firestore-Emulator legt die beim Laufen neben firebase.json ab.
 firestore-debug.log
 firebase-debug.log
+
+# Playwright wird nur lokal installiert; das Werkzeug bleibt ohne Abhängigkeiten.
+package.json
+package-lock.json
