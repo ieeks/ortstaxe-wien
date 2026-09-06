@@ -392,6 +392,79 @@ t('danach steht 200 in der Datenbank', (await db()).buchungen[oT].HT1.gastbetrag
 t('und der Marker ist aus',
   await seite.$eval('#dlPaid', n => n.classList.contains('offen')), false);
 
+/* --- Sechste Nachprüfung (main 6707995): R6-01 ---------------------------
+   Die Sperre aus R5-02 nahm den Importweg nicht mit. */
+
+console.log('\nEingabe während eines laufenden Imports wird nicht still verworfen');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HI1;Bestätigt;Ida;05.12.2027;06.12.2027;100,00;120,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleI = (await db()).buchungen;
+const oI = Object.keys(alleI).filter(o => alleI[o].HI1)[0];
+t('erst 120 aus der Datei gespeichert', alleI[oI].HI1.gastbetrag, 120);
+await seite.evaluate(() => { window.__schreibVerzug = 2000; });
+await lade(KOPF + 'HI1;Bestätigt;Ida;05.12.2027;06.12.2027;100,00;150,00\n');
+await seite.waitForTimeout(500);                      // Import läuft noch
+t('Gastbetragsfeld ist während des Imports gesperrt',
+  await seite.$eval('.paid-in[data-key="HI1"]', n => n.disabled).catch(() => 'kein Feld'), true);
+// Ereignis trotzdem auslösen: geprüft wird die Sperre im Code, nicht nur die
+// im DOM. Ohne sie stand der Wert in paidRaw, wurde angezeigt, erzeugte mangels
+// Wolken-Bestand keinen Auftrag und wurde am Ende von importieren weggeräumt.
+await seite.evaluate(() => {
+  const el = document.querySelector('.paid-in[data-key="HI1"]');
+  if (el) { el.value = '200,00'; el.dispatchEvent(new Event('input', {bubbles: true})); }
+});
+await seite.waitForTimeout(150);
+t('die Eingabe wird gar nicht erst übernommen',
+  await seite.$eval('.paid-in[data-key="HI1"]', n => n.value), '150,00');
+await seite.waitForTimeout(3500);
+await seite.evaluate(() => { window.__schreibVerzug = 0; });
+t('der Dateiwert 150 ist gespeichert', (await db()).buchungen[oI].HI1.gastbetrag, 150);
+t('und das Feld ist danach wieder frei',
+  await seite.$eval('.paid-in[data-key="HI1"]', n => n.disabled), false);
+
+/* Aus dem Mutationslauf über die R5-Fixes: neuerBestand() ließ sich zu einem
+   No-op machen, ohne dass ein Test rot wurde — in jedem geprüften Ablauf fing
+   eine andere Schicht den Fall ab. Dies ist der Ablauf, den nur die
+   Bestandsversion abdeckt: load() verwirft den Speichertimer nicht. */
+
+console.log('\nWartendes Autospeichern überschreibt die frisch geladene Datei nicht');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HZ1;Bestätigt;Zoe;05.01.2028;06.01.2028;100,00;120,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleZ = (await db()).buchungen;
+const oZ = Object.keys(alleZ).filter(o => alleZ[o].HZ1)[0];
+t('erst 100 aus der Datei gespeichert', alleZ[oZ].HZ1.auszahlung, 100);
+/* Bewusst über ein Optionsfeld, nicht über das Gastbetragsfeld: eine getippte
+   Überschreibung steht in paidRaw und geht über optionen() in den Import mit
+   ein — sie gewinnt dann gegen den Dateiwert und wird als „manuell“ vermerkt.
+   Das ist gewollt (siehe Fall darunter), verdeckt hier aber genau das, was
+   geprüft werden soll. Der Optionswechsel reiht denselben Auftrag ein, ohne
+   paidRaw anzufassen: seine Dokumente tragen die alte Auszahlung. */
+await seite.selectOption('#basis', 'ust10');          // löst das Autospeichern aus
+await seite.waitForTimeout(300);                      // Timer läuft noch (1200 ms)
+await lade(KOPF + 'HZ1;Bestätigt;Zoe;05.01.2028;06.01.2028;555,00;120,00\n');
+await seite.waitForTimeout(2600);                     // Timer wäre längst durch
+t('der Dateiwert 555 bleibt stehen', (await db()).buchungen[oZ].HZ1.auszahlung, 555);
+
+console.log('\nEine getippte, noch nicht gespeicherte Änderung gewinnt gegen die Datei');
+await seite.reload({waitUntil:'networkidle'});
+await seite.waitForFunction(() => window.__db);
+await lade(KOPF + 'HY1;Bestätigt;Yara;05.02.2028;06.02.2028;100,00;120,00\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(900);
+const alleY = (await db()).buchungen;
+const oY = Object.keys(alleY).filter(o => alleY[o].HY1)[0];
+await seite.fill('.paid-in[data-key="HY1"]', '999,00');
+await seite.waitForTimeout(300);                      // vor dem Autospeichern
+await lade(KOPF + 'HY1;Bestätigt;Yara;05.02.2028;06.02.2028;100,00;150,00\n');
+await seite.waitForTimeout(2600);
+/* Der zuletzt getippte Wert gewinnt — und wird als solcher vermerkt, nicht als
+   Dateiwert ausgegeben. Festgehalten, damit die Regel nicht unbemerkt kippt. */
+t('der getippte Wert 999 steht in der Datenbank', (await db()).buchungen[oY].HY1.gastbetrag, 999);
+t('und ist als manuell vermerkt', (await db()).buchungen[oY].HY1.gastbetragQuelle, 'manuell');
+
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
 console.log('\n' + gut + ' bestanden · ' + schlecht + ' fehlgeschlagen');

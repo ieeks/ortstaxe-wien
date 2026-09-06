@@ -211,8 +211,26 @@ Abwarten allein genügt nicht: während einer laufenden Wiederherstellung blieb 
 alte Tabelle bearbeitbar, und ein Tastendruck erzeugte daraus einen Auftrag, der
 sich brav dahinter einreihte — und sie damit rückgängig machte. Gesperrt wird
 **vor dem ersten `await`**, gezählt (Vorgänge verschachteln sich: die
-Wiederherstellung lädt am Ende selbst) und sowohl im DOM (`disabled`) als auch in
-`speichereEingabe`.
+Wiederherstellung lädt am Ende selbst) und sowohl im DOM (`disabled`) als auch im
+Eingabe-Handler.
+
+**Der Dateiimport gehört dazu.** Zwischen dem Anzeigen der neuen Datei und dem
+Ende des Imports zeigt die Tabelle etwas, das noch nirgends steht: `wolkeBestand`
+ist null, eine Eingabe erzeugt also gar keinen Auftrag, und am Ende räumt
+`importieren` `paidRaw` weg und meldet „gespeichert“. Der getippte Wert wäre
+verloren, und anders als bei einem verfrühten Erfolgsstatus holt ihn kein
+späterer Auftrag nach. Freigegeben wird in beiden Ausgängen des Imports.
+
+**Der Eingabe-Handler prüft die Sperre selbst**, nicht nur `speichereEingabe`.
+Sonst landet der Wert in `paidRaw`, wird angezeigt und still verworfen — sichtbar
+getippt, nirgends gespeichert.
+
+**Eine getippte, noch nicht gespeicherte Änderung gewinnt gegen eine danach
+geladene Datei** und wird als `gastbetragQuelle: 'manuell'` vermerkt: `paidRaw`
+geht über `optionen()` in den Import ein. Das ist gewollt — der zuletzt getippte
+Wert ist der jüngere —, aber es verdeckt in Tests alles, was sonst über den
+Importweg liefe. Ein Testfall für die Bestandsversion muss deshalb über ein
+Optionsfeld gehen, nicht über das Gastbetragsfeld.
 
 **Ein Schreibabschluss aktualisiert den Bestand, er ersetzt ihn nicht.**
 `wolkeBestand=docs` warf jede wegen unlesbarer Eingabe zurückgestellte Zeile aus
