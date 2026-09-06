@@ -70,6 +70,19 @@ if(location.search.indexOf('selftest')>=0){
   t('Abschluss','Neue Buchung im geschlossenen Monat geschützt',abNeu,true);
   t('Abschluss','Ohne Gastbetrag Prüfhinweis',monatsStand([{...abDoc,gastbetrag:null}],BASE,'2026-08').schaetzungen.length,1);
 
+  const lang={...abDoc,code:'LANG',von:'2026-06-01',bis:'2026-10-02',gastbetrag:3000};
+  const kurz={...abDoc,code:'KURZ',von:'2026-08-04',bis:'2026-08-07',gastbetrag:300};
+  const gemischt=monatsStand([lang,kurz],BASE,'2026-08');
+  const nurLang=monatsStand([lang],BASE,'2026-08');
+  t('Abschluss','Gemischt: nur drei steuerpflichtige Nächte',gemischt.naechte,3);
+  t('Abschluss','Gemischt: 31 befreite Nächte separat',gemischt.befreiteNaechte,31);
+  t('Abschluss','Gemischt: Steuer gleich Meldemonat',gemischt.ortstaxe,round2(compute(alsCsvZeilen([lang,kurz]),BASE).months.filter(m=>m.month==='2026-08').reduce((s,m)=>s+m.tax,0)));
+  t('Abschluss','Reiner Langzeitmonat: null steuerpflichtige Nächte',nurLang.naechte,0);
+  t('Abschluss','Reiner Langzeitmonat: null Steuer',nurLang.ortstaxe,0);
+  t('Abschluss','Befreiung wird erläutert',nurLang.hinweise.some(h=>h.includes('31 befreite Nächte')),true);
+  let einstellungsFehler='';try{pruefeSperren({'2026-08':abStand,'2026-09':abStand},[],[],{...BASE,basis:'gross',fee:5});}catch(e){einstellungsFehler=e.message;}
+  t('Abschluss','Einstellungen: beide Monate und Feld genannt',einstellungsFehler.includes('2026-08, 2026-09')&&einstellungsFehler.includes('USt-Basis')&&einstellungsFehler.includes('Gastgebergebühr'),true);
+
   /* Schlüsselzahlen der Stadt Wien — schützt die Konstanten aus CLAUDE.md */
   t('Schlüsselzahlen','3,2 % ohne USt',  schluessel(EFF.r32,1),    0.027691);
   t('Schlüsselzahlen','5 % ohne USt',    schluessel(EFF.r50,1),    0.047619);

@@ -20,15 +20,26 @@ export function monatsStand(docs,opt,monat){
   const schaetzungen=res.bookings.filter(b=>!b.exempt && b.betragQuelle!=='beleg').map(b=>b.code);
   if(schaetzungen.length)fehler.push('Geschätzte Gastbeträge: '+schaetzungen.join(', '));
   if(!buchungen.length)fehler.push('Keine Buchungen vorhanden. Vollständigkeit des Monats gesondert bestätigen.');
+  const monate=res.months.filter(m=>m.month===monat);
+  const befreiteNaechte=res.bookings.filter(b=>b.exempt).reduce((s,b)=>s+b.parts.filter(p=>p.month===monat).reduce((n,p)=>n+p.nights,0),0);
+  if(befreiteNaechte)fehler.push(befreiteNaechte+' befreite Nächte sind nicht in den steuerpflichtigen Nächten enthalten.');
   return {monat,buchungen,einstellungen:festeOptionen(opt),hinweise:[...new Set(fehler)],
-    schaetzungen,ortstaxe:round2(res.months.filter(m=>m.month===monat).reduce((s,m)=>s+m.tax,0)),
-    naechte:res.bookings.reduce((s,b)=>s+b.parts.filter(p=>p.month===monat).reduce((a,p)=>a+p.nights,0),0)};
+    schaetzungen,befreiteNaechte,ortstaxe:round2(monate.reduce((s,m)=>s+m.tax,0)),
+    naechte:monate.reduce((s,m)=>s+m.nights,0)};
 }
 export function pruefeSperren(sperren,alt,neu,opt){
-  for(const [monat,stand] of Object.entries(sperren||{})){
+  const buchungsMonate=[],felder=new Map();
+  const namen={basis:'USt-Basis',fee:'Gastgebergebühr',gastfee:'Gast-Servicegebühr',uid:'UID',zaehl:'Zählweise',konto:'Abgabenkonto'};
+  for(const [monat,stand] of Object.entries(sperren||{}).sort()){
     const a=alt.filter(d=>beruehrt(d,monat)).sort((x,y)=>x.code.localeCompare(y.code));
     const n=neu.filter(d=>beruehrt(d,monat)).sort((x,y)=>x.code.localeCompare(y.code));
-    if(kanonisch(a)!==kanonisch(n) || (opt && kanonisch(festeOptionen(opt))!==kanonisch(stand.einstellungen)))
-      throw new Error('Monat '+monat+' ist abgeschlossen. Zuerst mit Begründung wieder öffnen.');
+    if(kanonisch(a)!==kanonisch(n))buchungsMonate.push(monat);
+    if(opt)for(const [k,v] of Object.entries(festeOptionen(opt))){
+      if(v!==(stand.einstellungen[k]??null))felder.set(k,[...(felder.get(k)||[]),monat]);
+    }
   }
+  const meldungen=[];
+  if(buchungsMonate.length)meldungen.push('Buchungsänderungen betreffen abgeschlossene Monate: '+buchungsMonate.join(', ')+'.');
+  for(const [k,monate] of felder)meldungen.push('Die Einstellung „'+namen[k]+'“ gehört zu den Abschlüssen '+monate.join(', ')+'.');
+  if(meldungen.length)throw new Error(meldungen.join(' ')+' Zum Ändern diese Monate zuerst mit Begründung wieder öffnen.');
 }

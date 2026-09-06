@@ -148,7 +148,10 @@ Airbnb-Export gibt es die Spalte gar nicht. Siehe `verschmelzeBuchungen`.
 
 Die ganze Schicht ist additiv: ohne Anmeldung, ohne Netz oder bei einem
 SDK-Fehler verhält sich das Werkzeug genau wie vorher. `js/daten.js` ist die
-einzige Stelle, die mit Firebase spricht, und rechnet nichts.
+einzige Stelle, die mit Firebase spricht. Es koordiniert zusätzlich die Abschluss-
+und Sperrprüfung mit den reinen Funktionen aus `abschluss.js`; deren Rechnung
+kommt ausschließlich aus `kern.js`. Das läuft im Browser auf revisionsgebundenen
+Serverdaten, nicht als serverseitige Steuerprüfung.
 
 **Welche Quelle gerade gilt**, entscheidet `aktuelleZeilen()`: liegt ein Bestand
 aus der Datenbank vor, hat er Vorrang; sonst die zuletzt geladene CSV. Nach dem
@@ -178,8 +181,8 @@ verworfenen Stand; liefe er danach ab, schriebe er die alten Daten wieder hinein
 und machte die Wiederherstellung rückgängig. Löschen und Zurückschreiben laufen
 über `ersetzeBuchungen` als ein Firestore-Batch — sonst bleibt bei einem
 Schreibfehler ein Mischbestand zurück, aus dem schon gelöscht, aber noch nichts
-wiederhergestellt wurde. Über 400 Vorgänge ist das nicht mehr unteilbar; der
-Hinweis sagt das dann ausdrücklich.
+wiederhergestellt wurde. Über 400 geänderte Buchungen wird nicht teilweise geschrieben. Der Restore-Pfad
+verweist auf einen kontrollierten Migrationslauf durch das Dev-Team; die Sicherung bleibt erhalten.
 
 **Der Marker auf „Buchungen + Gastbeträge als CSV“ und die Warnung beim Schließen
 bedeuten „steht nur im Arbeitsspeicher“.** Ein erfolgreiches Speichern in die
@@ -284,3 +287,17 @@ Alle Buchungsschreibwege müssen durch `aendereBestand` laufen: Guard-Revision,
 Monatssperren, Buchungen und Änderungsprotokoll werden zusammen verarbeitet.
 Bei einem abgewiesenen Import muss die zuvor sichtbare Quelle wiederhergestellt werden.
 Kein automatisches Wiederöffnen gesperrter Monate, keine Teilwrites bei Größenüberschreitung.
+
+### Entscheidungen aus dem Review von PR #18
+
+- Die Online-Pflicht für geschützte Writes ist beabsichtigt: Monatssperre und
+  Buchungen müssen gemeinsam in einer aktuellen Firestore-Transaktion geprüft
+  werden. Ein später synchronisierter Offline-Write könnte einen inzwischen
+  abgeschlossenen Monat verändern. IndexedDB bleibt für SDK-Lesedaten erhalten;
+  CSV-Rechnen funktioniert offline. Es gibt keine Offline-Schreibwarteschlange.
+- Der Sitzungsbestand ist an seine Serverrevision gebunden. Normales Autospeichern
+  scannt die Sammlung nicht erneut; bei abweichender Revision wird abgebrochen.
+- `verwaltung/aktuell` enthält nur Zusammenfassungen und Referenzen auf die
+  unveränderlichen Belege. `ladeAbschluss` holt den Volltext für das Belegpaket.
+- Verlaufseinträge werden nach Größe aufgeteilt, ohne Werte wegzulassen, und
+  zusammen mit den Buchungen committed.

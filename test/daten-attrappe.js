@@ -1,4 +1,4 @@
-import {monatsStand,pruefeSperren,kanonisch} from './abschluss.js';
+import {monatsStand,pruefeSperren,kanonisch,festeOptionen} from './abschluss.js';
 /* Attrappe der Firestore-Schicht für test/integration.mjs.
 
    Ersetzt js/daten.js: hält alles im Speicher und legt den Zustand
@@ -14,7 +14,7 @@ export async function abmelden(){ if(melder) melder(null); }
 export async function ladeObjekte(){ return Object.values(db.objekte); }
 export async function speichereObjekt(id,d){ db.objekte[id]=Object.assign({id:id},d); }
 export async function ladeEinstellungen(){ return db.einstellungen; }
-export async function speichereEinstellungen(e){ db.einstellungen=Object.assign({},e); delete db.einstellungen.paid; }
+export async function speichereEinstellungen(e){ db.einstellungen=festeOptionen(e); }
 /* Verzögerung je Objekt einstellbar: window.__ladeVerzug = {o1: 400} lässt die
    Antwort für o1 später eintreffen als eine danach gestellte Anfrage. */
 export async function ladeBuchungen(objektId){
@@ -44,7 +44,7 @@ export async function ersetzeBuchungen(objektId,docs,zuLoeschen,einstellungen){
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   zuLoeschen.forEach(c=>{ delete db.buchungen[objektId][c]; });
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
-  if(einstellungen){ db.einstellungen=Object.assign({},einstellungen); delete db.einstellungen.paid; }
+  if(einstellungen){ db.einstellungen=festeOptionen(einstellungen); }
   db.schreibvorgaenge++;
   return {atomar:true, anzahl:docs.length+zuLoeschen.length+(einstellungen?1:0)};
 }
@@ -80,3 +80,5 @@ export async function schliesseMonat(o,m,opt,b,erwartet){
 }
 export async function oeffneMonat(o,m,grund){if(!grund||grund.trim().length<5)throw new Error('Bitte Grund angeben.');delete db.abschluesse[o][m];}
 export async function ladeVerlauf(o,c){return (db.verlauf||[]).filter(e=>e.objektId===o&&e.code===c);}
+
+export async function ladeAbschluss(o,m){return (await ladeAbschluesse(o))[m]||null;}

@@ -484,7 +484,7 @@ function sperreAn(){ sperren++; zeigeSperre(); }
 function sperreAus(){ if(sperren>0) sperren--; zeigeSperre(); }
 function zeigeSperre(){
   document.body.classList.toggle('gesperrt', sperren>0);
-  ['monatSchliessen','monatOeffnen','belegpaket'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=sperren>0 || (id==='monatSchliessen'?!!abschluesse[document.getElementById('abschlussMonat').value]:id==='monatOeffnen'?!abschluesse[document.getElementById('abschlussMonat').value]:false);});
+  zeigeMonatsKnopfsperre();
   document.querySelectorAll('.paid-in').forEach(el=>{ el.disabled = sperren>0 || geschlosseneBuchung(el.dataset.key); });
 }
 const $=id=>document.getElementById(id);
@@ -821,7 +821,7 @@ $('standZurueck').onclick=async()=>{
     const zuviel=jetzt.filter(d=>!behalten[d.code]).map(d=>d.code);
     // Buchungen und Einstellungen in einem Vorgang: sonst stehen nach einem
     // Fehler die zurückgespielten Buchungen neben den alten Einstellungen.
-    const erg=await daten.ersetzeBuchungen(ziel, zurueck, zuviel, alt.einstellungen||null);
+    await daten.ersetzeBuchungen(ziel, zurueck, zuviel, alt.einstellungen||null);
     // Der Bestand ist ein anderer: alles, was aus dem verworfenen Stand
     // gerechnet wurde, ist ab hier ungültig.
     neuerBestand();
@@ -836,9 +836,7 @@ $('standZurueck').onclick=async()=>{
       +zurueck.length+' Buchung'+(zurueck.length===1?'':'en')
       +(zuviel.length?' · '+zuviel.length+' später hinzugekommene entfernt ('
         +zuviel.slice(0,5).join(', ')+')':'')
-      +' · der vorherige Bestand wurde gesichert'
-      +(erg&&erg.atomar===false?' · Achtung: der Bestand war zu groß für einen '
-        +'unteilbaren Vorgang, bei einem Abbruch kann er unvollständig sein':'');
+      +' · der vorherige Bestand wurde gesichert';
     $('paidInfo').classList.remove('hide');
   }catch(ex){ stand('Nicht zurückgespielt: '+ex.message, true); }
   });
@@ -889,18 +887,25 @@ function zeichneMonatsarbeit(res){
   $('verlaufCode').value=v||codes[0]||'';
   zeigeMonatspruefung();
 }
+function zeigeMonatsKnopfsperre(){
+  const monat=$('abschlussMonat').value,geschlossen=!!abschluesse[monat];
+  const gesperrt=sperren>0 || !monat || !konto || !objektId;
+  $('monatSchliessen').disabled=gesperrt||geschlossen;
+  $('monatOeffnen').disabled=gesperrt||!geschlossen;
+  $('belegpaket').disabled=gesperrt||!geschlossen;
+}
 function zeigeMonatspruefung(){
   const monat=$('abschlussMonat').value,geschlossen=abschluesse[monat];
   $('abschlussVoll').checked=false;$('abschlussPruefung').checked=false;$('abschlussHinweise').checked=false;
-  if(!monat){$('abschlussStatus').textContent='Keine Monate verfügbar.';return;}
+  zeigeMonatsKnopfsperre();
+  if(!monat){$('abschlussStatus').textContent='Keine Monate verfügbar.';$('abschlussVergleich').textContent='';$('abschlussWarnungen').textContent='';return;}
   const stand=geschlossen||monatsStand(wolkeBestand||[],optionen(),monat);
   $('abschlussStatus').textContent=(geschlossen?'Abgeschlossen am '+geschlossen.abgeschlossen+' · eingefrorener Stand':'Offen · gespeicherter Bestand')+
-    ' · '+stand.naechte+(stand.naechte===1?' Nacht · ':' Nächte · ')+fmt(stand.ortstaxe)+' € Ortstaxe';
+    ' · '+stand.naechte+(stand.naechte===1?' steuerpflichtige Nacht · ':' steuerpflichtige Nächte · ')+fmt(stand.ortstaxe)+' € Ortstaxe';
   $('abschlussVergleich').textContent=geschlossen && wolkeBestand && monatsStand(wolkeBestand,optionen(),monat).ortstaxe!==geschlossen.ortstaxe ? 'Die aktuelle Berechnung weicht vom Abschluss ab. Für den abgeschlossenen Stand gilt das Belegpaket.' : '';
   $('abschlussWarnungen').textContent=stand.hinweise.length?stand.hinweise.join(' | '):'Keine rechnerischen Hinweise. Vollständigkeit und Belege bitte selbst prüfen.';
   $('abschlussChecks').classList.toggle('hide',!!geschlossen);
-  $('monatSchliessen').disabled=!!geschlossen;
-  $('monatOeffnen').disabled=!geschlossen;
+
 }
 async function monatsAktion(fn){
   if(sperren || !konto || !objektId)return;
@@ -930,7 +935,7 @@ $('monatOeffnen').onclick=()=>{
 $('belegpaket').onclick=()=>{
   const monat=$('abschlussMonat').value;
   return monatsAktion(async ziel=>{
-    const aktuell=await daten.ladeAbschluesse(ziel),stand=aktuell[monat];
+    const stand=await daten.ladeAbschluss(ziel,monat);
     if(!stand)throw new Error('Für ein Belegpaket den Monat zuerst abschließen.');
     const name=objekte.find(o=>o.id===ziel)?.name||ziel;
     const blob=belegpaket(stand,name),url=URL.createObjectURL(blob),a=document.createElement('a');

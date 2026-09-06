@@ -471,8 +471,12 @@ t('und ist als manuell vermerkt', (await db()).buchungen[oY].HY1.gastbetragQuell
 console.log('\nMonatsabschluss, Sperre, Belegpaket und Verlauf');
 await seite.reload({waitUntil:'networkidle'});
 await seite.waitForFunction(()=>window.__db);
+await seite.evaluate(()=>{window.__schreibVerzug=700;});
 await lade(KOPF+'MF1;Bestätigt;Maria;05.08.2026;06.08.2026;100,00;150,00\n');
+await seite.waitForTimeout(150);
+t('Abschlussknöpfe bleiben während Import gesperrt',await seite.$$eval('#monatSchliessen,#monatOeffnen,#belegpaket',a=>a.every(e=>e.disabled)),true);
 await seite.waitForTimeout(1200);
+await seite.evaluate(()=>{window.__schreibVerzug=0;});
 await seite.selectOption('#abschlussMonat','2026-08');
 await seite.click('#monatSchliessen');
 t('ohne Bestätigung kein Abschluss',Object.keys((await db()).abschluesse||{}).length,0);
@@ -493,6 +497,8 @@ t('Verlauf enthält Import',/import/.test(await seite.textContent('#verlaufInhal
 await seite.click('#monatOeffnen');await seite.waitForTimeout(500);
 t('bewusst wieder geöffnet',!!(await db()).abschluesse[mo]['2026-08'],false);
 
+await seite.evaluate(()=>{const e=document.getElementById('abschlussMonat');e.innerHTML='';e.dispatchEvent(new Event('change'));});
+t('Leere Monatsauswahl sperrt alle Monatsknöpfe',await seite.$$eval('#monatSchliessen,#monatOeffnen,#belegpaket',a=>a.every(e=>e.disabled)),true);
 if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;

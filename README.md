@@ -151,14 +151,23 @@ werden nicht nachträglich erfunden. Das Protokoll ist keine zertifizierte revis
 ### Speicherung und Rollout
 
 - Neue Pfade je Objekt: `verwaltung/aktuell`, `verlauf/{id}` und `abschlusshistorie/{id}`.
+  Die Verwaltung enthält kompakte Monatssperren mit Belegreferenz; vollständige
+  Buchungslisten stehen nur im unveränderlichen Abschlussbeleg.
 - Buchungsänderungen, Verlauf, Einstellungen und Objektversion werden in einer
-  Firestore-Transaktion gemeinsam geschrieben. Monatsabschluss und Wiederöffnen
+  Firestore-Transaktion gemeinsam geschrieben. Der im Arbeitsspeicher gehaltene
+  Bestand ist an Benutzer, Objekt und Revision gebunden. Beim normalen Autospeichern
+  wird nur die Revision in der Transaktion gelesen, nicht nochmals die ganze Sammlung.
+  Ein ausdrückliches Neuladen aktualisiert Bestand und Revision. Monatsabschluss und Wiederöffnen
   verwenden dieselbe Objektversion; konkurrierende Änderungen erfordern erneutes Laden.
 - Änderungen und Abschlüsse benötigen eine Serververbindung. Offline bleibt die
   CSV-Berechnung verfügbar; ein fehlgeschlagener Import stellt die vorherige Anzeige wieder her.
 - Maximal 400 geänderte Buchungen je Vorgang, maximale JSON-Nutzlast eines
-  Protokoll-/Verwaltungsdokuments 700 kB. Größere Vorgänge werden vollständig
-  abgelehnt, statt einen Teilbestand zu schreiben. Unveränderte Zeilen zählen nicht mit.
+  Protokoll-/Verwaltungsdokuments 700 kB. Der Verlauf wird bei Bedarf verlustfrei
+  auf mehrere Dokumente derselben Transaktion aufgeteilt. Eine einzelne zu große
+  Änderung oder ein zu großer Abschlussbeleg wird weiterhin vollständig abgelehnt.
+  Unveränderte Zeilen zählen nicht mit. Bei Wiederherstellungen über 400 Änderungen
+  ist ein gesonderter, kontrollierter Migrationslauf durch das Dev-Team nötig;
+  der aktuelle Bestand und die Sicherung werden nicht verändert.
 - **Rules und Anwendung gemeinsam ausrollen.** Die neuen Rules verlangen für jeden
   Buchungsschreibvorgang die atomar erhöhte Objektversion. Alte offene Tabs müssen
   nach dem Rollout neu geladen werden. Die Rules wurden nicht automatisch produktiv deployt.
@@ -191,6 +200,11 @@ java -jar firestore.jar --host 127.0.0.1 --port 8088 --project_id demo-ortstaxe-
 node test/firestore-regeln.mjs
 ```
 
-Validiert: 370 Selbsttests, 19 Prüfungen des Transaktionscodes, 76 Browserprüfungen
-und 14 Zugriffsprüfungen gegen den Firestore-Emulator. Die echte Google-Anmeldung
+Validierung nach dem PR-Review siehe `REVIEW-NOTES-PR18.md`. Die echte Google-Anmeldung
 und ein produktiver Rollout sind nicht Teil dieser Validierung.
+
+Im Abschluss und PDF sind **steuerpflichtige Nächte** dieselbe Summe wie in der
+Meldemonats-Tabelle. Befreite Nächte stehen separat und erzeugen einen Prüfhinweis.
+Einstellungsänderungen bleiben bei vorhandenen Abschlüssen geschützt; eine Ablehnung
+nennt jetzt alle betroffenen Felder und Monate, auch bei einer Eingabe in einem
+anderen, noch offenen Monat.

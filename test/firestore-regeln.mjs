@@ -26,6 +26,13 @@ await commit([{delete:root+'/'+o+'/verlauf/e1'}],'u1',false);
 await commit([update(o+'/abschlusshistorie/e1',{monat:'2026-08'})],'u1',true);
 await commit([update(o+'/abschlusshistorie/e1',{monat:'2026-09'})],'u1',false);
 await commit([{delete:root+'/'+o+'/buchungen/A'},update(guard,{revision:3,sperren:{}})],'u1',true);
+// Keep the previously ad-hoc multi-document Rules regression permanent.
+for(const anzahl of [1,10,255]){
+  const objekt='users/u1/objekte/mehrfach-'+Date.now()+'-'+anzahl;
+  const writes=Array.from({length:anzahl},(_,i)=>update(objekt+'/buchungen/B'+i,{...d,code:'B'+i}));
+  writes.push(update(objekt+'/verwaltung/aktuell',{revision:1,sperren:{}}));
+  await commit(writes,'u1',true);
+}
 // Foreign reads must be denied as well.
 const r=await fetch(url+'/'+guard,{headers:{Authorization:'Bearer '+token('u2')}});assert.equal(r.status,403);n++;
 console.log(n+' Firestore-Regelprüfungen bestanden');

@@ -11,9 +11,9 @@ export function zipDateien(dateien){
   const lokal=[],zentral=[];let offset=0;
   for(const [name,inhalt] of Object.entries(dateien)){
     const n=utf8(name),b=typeof inhalt==='string'?utf8(inhalt):inhalt,c=crc32(b);
-    const h=header(30,[[0,4,0x04034b50],[4,2,20],[6,2,0x800],[14,4,c],[18,4,b.length],[22,4,b.length],[26,2,n.length]]);
+    const h=header(30,[[0,4,0x04034b50],[4,2,20],[6,2,0x800],[12,2,33],[14,4,c],[18,4,b.length],[22,4,b.length],[26,2,n.length]]);
     lokal.push(h,n,b);
-    zentral.push(header(46,[[0,4,0x02014b50],[4,2,20],[6,2,20],[8,2,0x800],[16,4,c],[20,4,b.length],[24,4,b.length],[28,2,n.length],[42,4,offset]]),n);
+    zentral.push(header(46,[[0,4,0x02014b50],[4,2,20],[6,2,20],[8,2,0x800],[14,2,33],[16,4,c],[20,4,b.length],[24,4,b.length],[28,2,n.length],[42,4,offset]]),n);
     offset+=h.length+n.length+b.length;
   }
   const z=concat(zentral),anz=Object.keys(dateien).length;
@@ -40,7 +40,7 @@ export function berichtPdf(zeilen){
 export function paketDateien(s,objekt){
   const zeilen=['ORTSTAXE WIEN - MONATSABSCHLUSS',objekt+' / '+s.monat,'',
     'Abgeschlossen: '+s.abgeschlossen,'Geprüft durch: '+s.benutzer,
-    'Ortstaxe: '+fmt(s.ortstaxe)+' EUR','Nächte im Monat: '+s.naechte,'',
+    'Ortstaxe: '+fmt(s.ortstaxe)+' EUR','Steuerpflichtige Nächte im Monat: '+s.naechte,'Befreite Nächte: '+(s.befreiteNaechte||0),'',
     'Prüfung: Vollständigkeit und Belege bestätigt.',
     'Hinweise akzeptiert: '+(s.bestaetigung?.hinweise?'ja':'nein / keine Hinweise'),'','Einstellungen:',
     ...Object.entries(s.einstellungen).map(([k,v])=>({basis:'USt-Basis',fee:'Wirksame Gastgebergebühr (%)',gastfee:'Gast-Servicegebühr (%)',uid:'UID hinterlegt',zaehl:'Zählweise',konto:'Abgabenkonto'}[k]||k)+': '+v),'',

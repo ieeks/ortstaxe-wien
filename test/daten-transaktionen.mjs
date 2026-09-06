@@ -7,11 +7,11 @@ import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 import {monatsStand} from '../js/abschluss.js';
 const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'ortstaxe-daten-'));
-const kopie=structuredClone, store=new Map();let vorTransaktion=null,fehler=false;
+const kopie=structuredClone, store=new Map();let vorTransaktion=null,fehler=false,sammlungsReads=0;
 const snap=p=>({exists:()=>store.has(p),data:()=>kopie(store.get(p))});
 const f={doc:(_, ...p)=>p.join('/'),collection:(_, ...p)=>p.join('/'),
   getDocFromServer:async p=>snap(p),getDoc:async p=>snap(p),
-  getDocsFromServer:async p=>({docs:[...store].filter(([k])=>k.startsWith(p+'/')&&!k.slice(p.length+1).includes('/')).map(([k,v])=>({id:k.split('/').at(-1),data:()=>kopie(v)}))}),
+  getDocsFromServer:async p=>{sammlungsReads++;return {docs:[...store].filter(([k])=>k.startsWith(p+'/')&&!k.slice(p.length+1).includes('/')).map(([k,v])=>({id:k.split('/').at(-1),data:()=>kopie(v)}))};},
   where:(field,op,value)=>({field,op,value}),query:(p,...q)=>({p,q}),
   getDocs:async ({p,q})=>({docs:[...store].filter(([k,v])=>k.startsWith(p+'/')&&q.every(x=>v[x.field]?.includes(x.value))).map(([k,v])=>({data:()=>kopie(v)}))}),
   runTransaction:async(_,fn)=>{
@@ -32,12 +32,15 @@ const p='users/u1/objekte/a/',details=()=>[...store.keys()].filter(k=>k.startsWi
 let tests=0;function ok(v){assert.ok(v);tests++;}async function block(fn){const vorher=kopie([...store]);await assert.rejects(fn);assert.deepEqual([...store],vorher);tests++;}
 try{
  await d.schreibeBuchungen('a',[a,b],{grund:'import',datei:'original.csv',einstellungen:opt});ok(details()===1);
+ const readsVorAuto=sammlungsReads;
  ok((await d.ladeVerlauf('a','A'))[0].nachher.gastbetrag===150);
- await d.schreibeBuchungen('a',[a,b],{grund:'manuell',einstellungen:opt});ok(details()===1);
+ await d.schreibeBuchungen('a',[a,b],{grund:'manuell',einstellungen:opt});ok(details()===1);ok(sammlungsReads===readsVorAuto);
  const stand=monatsStand([a,b],opt,'2026-08');
  await block(()=>d.schliesseMonat('a','2026-08',opt,{},stand));
  await d.schliesseMonat('a','2026-08',opt,{vollstaendig:true,geprueft:true,hinweise:true},stand);
  ok(!!(await d.ladeAbschluesse('a'))['2026-08']);
+ ok(!store.get(p+'verwaltung/aktuell').sperren['2026-08'].buchungen);
+ ok((await d.ladeAbschluss('a','2026-08')).buchungen[0].code==='A');
  await block(()=>d.schreibeBuchungen('a',[{...a,gastbetrag:200}],{einstellungen:opt}));
  await block(()=>d.schreibeBuchungen('a',[{...a,code:'NEU'}],{einstellungen:opt}));
  await block(()=>d.schreibeBuchungen('a',[{...a,von:'2026-09-01',bis:'2026-09-02'}],{einstellungen:opt}));
@@ -54,5 +57,21 @@ try{
  const viele=Array.from({length:255},(_,i)=>({...b,code:'V'+i,objektId:'viele'}));
  await d.schreibeBuchungen('viele',viele,{grund:'import',einstellungen:opt});ok(store.has('users/u1/objekte/viele/buchungen/V254'));
  await block(()=>d.schreibeBuchungen('viele',Array.from({length:401},(_,i)=>({...b,code:'X'+i,objektId:'viele'})),{einstellungen:opt}));
+ const volle=Array.from({length:400},(_,i)=>({...b,code:'G'+i,objektId:'gross',notiz:'x'.repeat(2000)}));
+ await d.schreibeBuchungen('gross',volle,{grund:'import',einstellungen:opt});
+ ok([...store.keys()].filter(k=>k.startsWith('users/u1/objekte/gross/verlauf/')).length>1);
+ ok((await d.ladeVerlauf('gross','G399'))[0].nachher.notiz.length===2000);
+ const vorRestore=kopie([...store]);
+ await assert.rejects(()=>d.ersetzeBuchungen('gross',[{...b,code:'ANDERS'}],volle.map(d=>d.code),opt),/kontrollierte Migration/);
+ assert.deepEqual([...store],vorRestore);tests++;
+ // The entire previously loaded snapshot is bound to its revision, not just writes.
+ await d.ladeBuchungen('a');
+ const stale=monatsStand([store.get(p+'buchungen/A'),store.get(p+'buchungen/B')],opt,'2026-08');
+ vorTransaktion=()=>{const k=p+'verwaltung/aktuell';store.set(k,{...store.get(k),revision:store.get(k).revision+1});};
+ await assert.rejects(()=>d.schliesseMonat('a','2026-08',opt,{vollstaendig:true,geprueft:true,hinweise:true},stale),/Bestand geändert/);tests++;
+ await d.schreibeBuchungen('performance',[{...a,objektId:'performance'}],{einstellungen:opt});
+ const vorEdit=sammlungsReads;
+ await d.schreibeBuchungen('performance',[{...a,objektId:'performance',gastbetrag:175}],{einstellungen:opt});
+ ok(sammlungsReads===vorEdit);
  console.log(tests+' Transaktionsprüfungen bestanden');
 }finally{await fs.rm(tmp,{recursive:true,force:true});delete globalThis.__abschlussSDK;}
