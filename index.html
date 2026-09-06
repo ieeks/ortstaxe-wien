@@ -55,6 +55,26 @@ button.offen::after{content:' •'}
 .opts{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end;margin-top:16px;padding:16px 18px}
 .opt{display:flex;flex-direction:column;gap:5px}
 .opt label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
+/* Monatsabschluss. Innenabstand wie .quota, damit die Karte neben den anderen
+   Abschnitten sitzt statt eigene Maße zu erfinden. Die Überschrift steht im
+   Markup über der Karte, nicht darin — sonst addiert sich der Außenabstand von
+   h2 zum Innenabstand und die Karte liest sich als eigenes Bauteil.
+   Diese Regeln stehen bewusst vor .hide: bei gleicher Spezifität gewinnt die
+   spätere, und .checks setzt display. */
+.monat{padding:18px 20px}
+/* Nur die Felder direkt in der Karte, nicht die in der Verlaufszeile: dort
+   setzt der Flex-Zeilenabstand den Abstand. */
+/* flex-start, sonst streckt die Spalten-Flexbox das Feld auf volle Kartenbreite.
+   In .opts begrenzt die Zeile die Breite, hier gibt es nichts, was das täte. */
+.monat > .opt{margin-top:14px;align-items:flex-start}
+input[type=text]#verlaufCode{width:180px}
+.monat-stand{font-family:var(--mono);font-size:12.5px;margin:14px 0 0}
+.checks{display:flex;flex-direction:column;gap:9px;margin-top:14px}
+.checks label{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;line-height:1.45;cursor:pointer}
+.checks input{flex:none;width:15px;height:15px;margin:2px 0 0;accent-color:var(--ink)}
+.verlauf-zeile{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:12px}
+#verlaufInhalt{font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--ink-2);
+  white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0 0}
 select,input[type=number],input[type=text]{font-family:var(--mono);font-size:13px;padding:7px 9px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:2px}
 input[type=number]{width:92px}
 input[type=text]#konto{width:120px}
@@ -269,21 +289,35 @@ details p,details li{color:var(--ink-2)}
     <div class="mono" style="font-size:8.5pt" id="printMeta"></div>
   </div>
 
-  <section id="monatsarbeit" class="card hide" style="padding:20px;margin:20px 0">
+  <!-- Überschrift und Karte liegen zusammen in der Sektion, die das Skript
+       ein- und ausblendet — so bleibt kein Titel über einer leeren Stelle
+       stehen, und der Aufbau ist derselbe wie bei den Abschnitten darunter. -->
+  <section id="monatsarbeit" class="hide">
     <h2>Monatsabschluss &amp; Belege</h2>
-    <p>Die Prüfung bezieht sich auf gespeicherte Buchungen. Ein Abschluss bestätigt keine Abgabe bei VIETour.</p>
-    <label>Monat <select id="abschlussMonat"></select></label>
-    <p id="abschlussStatus" role="status"></p>
-    <p id="abschlussVergleich" role="status"></p>
-    <p id="abschlussWarnungen" class="note"></p>
-    <div id="abschlussChecks">
-      <p><label><input type="checkbox" id="abschlussVoll"> Alle Buchungen und Stornierungen dieses Monats sind vollständig erfasst.</label></p>
-      <p><label><input type="checkbox" id="abschlussPruefung"> Beträge und Belege habe ich geprüft.</label></p>
-      <p><label><input type="checkbox" id="abschlussHinweise"> Angezeigte Hinweise und Schätzungen habe ich geprüft und akzeptiert.</label></p>
+    <div class="card monat">
+      <p class="note">Die Prüfung bezieht sich auf gespeicherte Buchungen. Ein Abschluss bestätigt keine Abgabe bei VIETour.</p>
+      <div class="opt"><label for="abschlussMonat">Monat</label><select id="abschlussMonat"></select></div>
+      <p id="abschlussStatus" role="status" class="monat-stand"></p>
+      <p id="abschlussVergleich" role="status" class="note"></p>
+      <p id="abschlussWarnungen" class="note"></p>
+      <div id="abschlussChecks" class="checks">
+        <label><input type="checkbox" id="abschlussVoll"> Alle Buchungen und Stornierungen dieses Monats sind vollständig erfasst.</label>
+        <label><input type="checkbox" id="abschlussPruefung"> Beträge und Belege habe ich geprüft.</label>
+        <label><input type="checkbox" id="abschlussHinweise"> Angezeigte Hinweise und Schätzungen habe ich geprüft und akzeptiert.</label>
+      </div>
+      <div class="btnrow"><button id="monatSchliessen">Geprüft abschließen</button><button id="monatOeffnen" class="ghost">Mit Grund wieder öffnen</button><button id="belegpaket" class="ghost">Belegpaket als ZIP</button></div>
+      <p class="note">Geschlossene Monate behalten ihren Abschlussstand. Änderungen an betroffenen Buchungen erfordern das Wiederöffnen. Das Paket enthält PDF, CSV und Einstellungen; externe Originalbelege sind nicht enthalten.</p>
+      <details>
+        <summary>Änderungsverlauf je Buchung</summary>
+        <div class="verlauf-zeile">
+          <!-- type=text, sonst greift die gemeinsame Feldregel nicht: sie
+               adressiert input[type=text] und lässt ein Feld ohne Typ ungestylt. -->
+          <div class="opt"><label for="verlaufCode">Buchung</label><input type="text" id="verlaufCode" list="verlaufCodes" placeholder="Bestätigungs-Code"><datalist id="verlaufCodes"></datalist></div>
+          <button id="verlaufLaden" class="ghost">Verlauf anzeigen</button>
+        </div>
+        <pre id="verlaufInhalt"></pre>
+      </details>
     </div>
-    <div class="btnrow"><button id="monatSchliessen">Geprüft abschließen</button><button id="monatOeffnen" class="ghost">Mit Grund wieder öffnen</button><button id="belegpaket" class="ghost">Belegpaket als ZIP</button></div>
-    <p class="note">Geschlossene Monate behalten ihren Abschlussstand. Änderungen an betroffenen Buchungen erfordern das Wiederöffnen. Das Paket enthält PDF, CSV und Einstellungen; externe Originalbelege sind nicht enthalten.</p>
-    <details><summary>Änderungsverlauf je Buchung</summary><label>Buchung <input id="verlaufCode" list="verlaufCodes" placeholder="Bestätigungs-Code"><datalist id="verlaufCodes"></datalist></label> <button id="verlaufLaden" class="ghost">Verlauf anzeigen</button><pre id="verlaufInhalt" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
   </section>
 
   <h2 id="quota-h">Kurzzeitvermietung — 90 Tage pro Kalenderjahr</h2>

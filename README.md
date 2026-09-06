@@ -170,7 +170,9 @@ werden nicht nachträglich erfunden. Das Protokoll ist keine zertifizierte revis
   der aktuelle Bestand und die Sicherung werden nicht verändert.
 - **Rules und Anwendung gemeinsam ausrollen.** Die neuen Rules verlangen für jeden
   Buchungsschreibvorgang die atomar erhöhte Objektversion. Alte offene Tabs müssen
-  nach dem Rollout neu geladen werden. Die Rules wurden nicht automatisch produktiv deployt.
+  nach dem Rollout neu geladen werden. Den Rules-Teil übernimmt der Workflow unter
+  „Regeln ausrollen“; er läuft nicht mit dem Pages-Deploy zusammen, sondern
+  eigenständig bei jeder Änderung an `firestore.rules`.
 - Die Monatssperre ist eine Schutzfunktion der Anwendung. Der Eigentümer kann über
   eigene API-Clients oder die Firebase-Administration Daten verändern; sie ist keine
   Berechtigungsgrenze gegen den Eigentümer selbst. Neue Protokolle können über die
@@ -202,6 +204,39 @@ node test/firestore-regeln.mjs
 
 Validierung nach dem PR-Review siehe `REVIEW-NOTES-PR18.md`. Die echte Google-Anmeldung
 und ein produktiver Rollout sind nicht Teil dieser Validierung.
+
+### Regeln ausrollen
+
+Ein Merge rollt über GitHub Pages nur die Anwendung aus. `firestore.rules` liegt im
+Firebase-Projekt und wird davon nicht berührt — genau daraus entsteht der Zustand
+„neue Anwendung, alte Regeln“, der sich als **Missing or insufficient permissions**
+meldet: die Anwendung liest beim Laden `verwaltung/aktuell`, und dafür haben alte
+Regeln keinen `match`-Block.
+
+`.github/workflows/firestore-regeln.yml` schließt diese Lücke. Er läuft bei jeder
+Änderung an `firestore.rules`, `firestore.indexes.json` oder `firebase.json` auf
+`main`, prüft die Regeln zuerst gegen den Emulator (`test/firestore-regeln.mjs`) und
+rollt erst danach aus. Auf Pull Requests wird nur geprüft, nie ausgerollt. Über
+**Actions → Firestore-Regeln → Run workflow** lässt er sich von Hand auslösen, auch
+aus der GitHub-App am Telefon.
+
+Einmalige Einrichtung am Rechner:
+
+1. In der Google Cloud Console des Projekts `ortstaxe-wien` ein Dienstkonto anlegen
+   und ihm die Rolle **Firebase Rules Admin** (`roles/firebaserules.admin`) geben.
+   Mehr Rechte braucht der Workflow nicht; er schreibt keine Daten und liest keine
+   Buchungen.
+2. Für dieses Dienstkonto einen JSON-Schlüssel erzeugen.
+3. Den vollständigen JSON-Inhalt als Repository-Secret **`FIREBASE_SERVICE_ACCOUNT`**
+   hinterlegen (Settings → Secrets and variables → Actions).
+
+Fehlt das Secret, bricht nur der Deploy-Schritt ab und sagt das ausdrücklich; die
+Emulatorprüfung läuft ohne jede Anmeldung. Solange das Secret nicht existiert, bleibt
+der Weg von Hand: Regeltext aus `firestore.rules` in die Firebase-Konsole unter
+Firestore Database → Regeln einfügen und veröffentlichen.
+
+Nach jedem Ausrollen offene Tabs neu laden — alter Code schreibt ohne erhöhte
+Objektversion und wird von den neuen Regeln abgewiesen.
 
 Im Abschluss und PDF sind **steuerpflichtige Nächte** dieselbe Summe wie in der
 Meldemonats-Tabelle. Befreite Nächte stehen separat und erzeugen einen Prüfhinweis.
