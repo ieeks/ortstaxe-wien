@@ -38,6 +38,13 @@ on:
 permissions:
   contents: read
 
+env:
+  # Genau festgenagelt, nicht „@15“: Prüfung und Ausrollen sollen dieselbe
+  # Fassung verwenden, und der Emulator-Cache unten braucht einen Schlüssel,
+  # unter dem sich die Emulatorfassung nicht wegbewegt. Beim Anheben rotiert
+  # der Schlüssel von selbst mit.
+  FIREBASE_TOOLS: 15.29.0
+
 # Zwei gleichzeitige Deploys würden sich gegenseitig überholen. Laufende
 # Durchgänge werden nicht abgebrochen: ein halb ausgerollter Regelstand ist
 # schlimmer als ein überflüssiger zweiter Durchgang.
@@ -50,24 +57,34 @@ jobs:
     name: Regeln gegen den Emulator prüfen
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
       # Der Firestore-Emulator ist ein Java-Prozess.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
+
+      # Sonst lädt jeder Lauf den Emulator neu (rund 136 MB) — der Lauf hängt
+      # damit an einem fremden Download, obwohl dieser Job ein Ausrollen
+      # absichert. Kein restore-keys: fällt der Schlüssel aus, gehört die neue
+      # Emulatorfassung geholt und frisch abgelegt, nicht die alte weitergereicht.
+      - name: Emulator zwischenspeichern
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulatoren-${{ runner.os }}-${{ env.FIREBASE_TOOLS }}
 
       # Ein „demo-“-Projekt läuft vollständig offline: keine Anmeldung, kein
       # Zugriff auf das Produktivprojekt. Dieselbe Projektkennung, die
       # test/firestore-regeln.mjs in seinen Token erwartet.
       - name: Rules-Prüfungen
         run: >
-          npx --yes firebase-tools@15 emulators:exec
+          npx --yes firebase-tools@${{ env.FIREBASE_TOOLS }} emulators:exec
           --only firestore
           --project demo-ortstaxe-review
           "node test/firestore-regeln.mjs"
@@ -79,9 +96,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -108,7 +125,7 @@ jobs:
 
       - name: Ausrollen
         run: >
-          npx --yes firebase-tools@15 deploy
+          npx --yes firebase-tools@${{ env.FIREBASE_TOOLS }} deploy
           --only firestore:rules,firestore:indexes
           --project ortstaxe-wien
           --non-interactive
