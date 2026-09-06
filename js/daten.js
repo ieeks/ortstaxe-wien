@@ -1,8 +1,10 @@
+import {monatsStand, pruefeSperren, festeOptionen, kanonisch} from './abschluss.js';
 /* Firestore-Anbindung: Anmeldung, Lesen, Schreiben, Schnappschüsse.
 
-   Diese Datei ist die einzige Stelle, die mit Firebase spricht. Sie rechnet
-   nichts — das Umformen zwischen Dokument und Rechenmodell steht in kern.js
-   und ist dort geprüft. Hier bleibt nur Ein- und Ausgabe.
+   Diese Datei ist die einzige Stelle, die mit Firebase spricht. Sie koordiniert
+   Ein-/Ausgabe und prüft Abschlüsse mit den reinen Funktionen aus abschluss.js.
+   Deren Rechnung verwendet ausschließlich kern.js. Diese Prüfung läuft im
+   Browser auf versionsgebundenen Serverdaten, nicht auf dem Firebase-Server.
 
    Das Werkzeug muss ohne diese Schicht vollständig funktionieren: wer die
    CSV lädt und rechnet, soll das auch ohne Anmeldung und ohne Netz können.
@@ -16,6 +18,23 @@ const CDN = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK + '/';
 
 let teile = null;          // geladenes SDK
 let app = null, db = null, auth = null;
+// Nur Sitzungsspeicher, nach Benutzer und Objekt getrennt, immer mit Revision.
+const arbeitsCache=new Map();
+const cacheKey=o=>uid()+'/'+o;
+// Anzeigeherkunft ist keine vertrauenswürdige Schreibgrundlage.
+const leseHerkunft=new Map();
+const netzfehler=e=>['unavailable','deadline-exceeded'].includes(e?.code);
+function merkeLesen(o,feld,cache,benutzer){
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+  const key=benutzer+'/'+o;
+  leseHerkunft.set(key,{...leseHerkunft.get(key),[feld]:cache});
+  if(cache)arbeitsCache.delete(key);
+}
+export function istOfflineStand(o){
+  const h=auth?.currentUser && leseHerkunft.get(cacheKey(o));
+  return !!(h?.buchungen || h?.abschluesse);
+}
+function leereSitzung(){arbeitsCache.clear();leseHerkunft.clear();}
 
 /* Das SDK wird einmal geladen und danach wiederverwendet. Schlägt der Import
    fehl, ist fast immer die gepinnte Version in firebase-config.js schuld —
@@ -43,8 +62,9 @@ async function start(){
   const {a,f,u} = await sdk();
   app  = a.getApps().length ? a.getApp() : a.initializeApp(firebaseConfig);
   // Offline-Cache über IndexedDB: das ist die eine bewusste Ausnahme von der
-  // Regel „kein Browserspeicher“ in CLAUDE.md. Ohne ihn ist das Werkzeug
-  // unterwegs unbrauchbar, und genau dafür ist die Synchronisierung da.
+  // Regel „kein Browserspeicher“ in CLAUDE.md. Vorhandene SDK-Lesedaten können
+  // im Cache bleiben. Geschützte Writes benötigen aber eine Online-Transaktion;
+  // ein Offline-Write dürfte eine zwischenzeitlich gesetzte Monatssperre umgehen.
   db   = f.initializeFirestore(app, {localCache: f.persistentLocalCache({})});
   auth = u.getAuth(app);
 }
@@ -54,7 +74,7 @@ async function start(){
 export async function beobachteAnmeldung(rueckruf){
   await start();
   const {u} = teile;
-  return u.onAuthStateChanged(auth, p => rueckruf(p ? {uid:p.uid, name:p.displayName||p.email||'', bild:p.photoURL||''} : null));
+  return u.onAuthStateChanged(auth, p => {leereSitzung();rueckruf(p ? {uid:p.uid, name:p.displayName||p.email||'', bild:p.photoURL||''} : null);});
 }
 
 export async function anmelden(){
@@ -71,7 +91,7 @@ export async function anmelden(){
   }
 }
 
-export async function abmelden(){ await start(); await teile.u.signOut(auth); }
+export async function abmelden(){ await start(); await teile.u.signOut(auth); leereSitzung(); }
 
 function uid(){
   if(!auth || !auth.currentUser) throw new Error('Nicht angemeldet.');
@@ -103,68 +123,151 @@ export async function ladeEinstellungen(){
   return d.exists() ? d.data() : null;
 }
 
-export async function speichereEinstellungen(e){
-  await start();
-  const {f} = teile;
-  await f.setDoc(f.doc(db,'users',uid(),'einstellungen','aktuell'),
-                 Object.assign({schemaVersion:SCHEMA_VERSION}, e), {merge:true});
-}
-
 /* --- Buchungen --- */
 
 export async function ladeBuchungen(objektId){
-  await start();
-  const {f} = teile;
-  const s = await f.getDocs(f.collection(db,'users',uid(),'objekte',objektId,'buchungen'));
-  return s.docs.map(d => d.data());
-}
-
-/* Schreibt in Stapeln. Firestore nimmt höchstens 500 Schreibvorgänge je
-   Stapel; bei einem Jahresbestand ist das meist einer. */
-export async function schreibeBuchungen(objektId, dokumente){
-  await start();
-  const {f} = teile;
-  const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
-  for(let i=0; i<dokumente.length; i+=400){
-    const stapel = f.writeBatch(db);
-    dokumente.slice(i,i+400).forEach(d => stapel.set(f.doc(basis, String(d.code)), d, {merge:true}));
-    await stapel.commit();
+  await start();const benutzer=uid();
+  try{
+    const stand=await leseArbeitsstand(objektId,true);
+    merkeLesen(objektId,'buchungen',false,benutzer);return structuredClone(stand.docs);
+  }catch(e){
+    if(!netzfehler(e))throw e;
+    const s=await teile.f.getDocsFromCache(teile.f.collection(db,'users',benutzer,'objekte',objektId,'buchungen'));
+    merkeLesen(objektId,'buchungen',true,benutzer);
+    return s.docs.map(d=>d.data());
   }
-  return dokumente.length;
 }
 
-/* Löschen und Schreiben in einem Stapel. Firestore wendet einen writeBatch
-   ganz oder gar nicht an — ohne das hinterlässt eine fehlgeschlagene
-   Wiederherstellung einen Mischbestand: das Löschen war schon durch, das
-   Zurückschreiben nicht. Über 400 Vorgänge wird gestapelt statt atomar; das
-   ist erst bei Beständen jenseits eines Jahres relevant und wird gemeldet. */
-export async function ersetzeBuchungen(objektId, dokumente, zuLoeschen, einstellungen){
-  await start();
-  const {f} = teile;
-  const basis = f.collection(db,'users',uid(),'objekte',objektId,'buchungen');
-  const gesamt = dokumente.length + zuLoeschen.length + (einstellungen?1:0);
-  if(gesamt<=400){
-    const stapel = f.writeBatch(db);
-    zuLoeschen.forEach(c => stapel.delete(f.doc(basis, String(c))));
-    dokumente.forEach(d => stapel.set(f.doc(basis, String(d.code)), d));
-    // Die Einstellungen gehören in denselben Vorgang: sonst stehen nach einem
-    // Fehler die Buchungen des alten Standes neben den neuen Einstellungen.
-    if(einstellungen)
-      stapel.set(f.doc(db,'users',uid(),'einstellungen','aktuell'),
-                 Object.assign({schemaVersion:SCHEMA_VERSION}, einstellungen), {merge:true});
-    await stapel.commit();
-    return {atomar:true, anzahl:gesamt};
+/* Buchungen, Verlauf und Sperrversion werden gemeinsam geschrieben. */
+export async function schreibeBuchungen(objektId, dokumente, kontext={}){
+  return aendereBestand(objektId,dokumente,[],kontext);
+}
+export async function ersetzeBuchungen(objektId,dokumente,zuLoeschen,einstellungen){
+  await aendereBestand(objektId,dokumente,zuLoeschen,{grund:'wiederherstellung',einstellungen});
+}
+export async function loescheBuchung(objektId,code){
+  return aendereBestand(objektId,[],[code],{grund:'loeschen'});
+}
+function pfad(f,o,...rest){return f.doc(db,'users',uid(),'objekte',o,...rest);}
+async function leseArbeitsstand(o,neuLaden=false){
+  await start(); const {f}=teile, benutzer=uid();
+  const key=cacheKey(o);
+  if(!neuLaden && arbeitsCache.has(key))return {...structuredClone(arbeitsCache.get(key)),ref:pfad(f,o,'verwaltung','aktuell')};
+  const ref=pfad(f,o,'verwaltung','aktuell');
+  const v=await f.getDocFromServer(ref);
+  const docs=await f.getDocsFromServer(f.collection(db,'users',uid(),'objekte',o,'buchungen'));
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+  const danach=await f.getDocFromServer(ref);
+  const meta=v.exists()?v.data():{revision:0,sperren:{}};
+  if((danach.exists()?danach.data().revision:0)!==meta.revision)throw new Error('Bestand während des Ladens geändert. Bitte erneut laden.');
+  const stand={benutzer,meta,docs:docs.docs.map(d=>d.data())};
+  if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+  arbeitsCache.set(key,structuredClone(stand));
+  return {...stand,ref};
+}
+function groesse(d){
+  if(new TextEncoder().encode(JSON.stringify(d)).length>700000)
+    throw new Error('Dieser Stand ist zu groß. Es wurde nichts gespeichert.');
+}
+function teileProtokoll(aenderungen,rahmen){
+  const teile=[];let gruppe=[];
+  const pack=g=>({...rahmen,codes:g.map(a=>a.code),aenderungen:g});
+  for(const a of aenderungen){
+    const kandidat=pack([...gruppe,a]);
+    if(new TextEncoder().encode(JSON.stringify(kandidat)).length>600000){
+      if(gruppe.length)teile.push(pack(gruppe));
+      gruppe=[a];groesse(pack(gruppe));
+    }else gruppe.push(a);
   }
-  for(const c of zuLoeschen) await f.deleteDoc(f.doc(basis, String(c)));
-  await schreibeBuchungen(objektId, dokumente);
-  if(einstellungen) await speichereEinstellungen(einstellungen);
-  return {atomar:false, anzahl:gesamt};
+  if(gruppe.length)teile.push(pack(gruppe));return teile;
 }
-
-export async function loescheBuchung(objektId, code){
-  await start();
-  const {f} = teile;
-  await f.deleteDoc(f.doc(db,'users',uid(),'objekte',objektId,'buchungen',String(code)));
+async function aendereBestand(o,docs,entfernen,kontext){
+  if(istOfflineStand(o))throw new Error('Offline-Stand ist schreibgeschützt. Bitte online erneut laden.');
+  const stand=await leseArbeitsstand(o), {f}=teile, benutzer=stand.benutzer;
+  const vorher=new Map(stand.docs.map(d=>[d.code,d]));
+  const nach=new Map(vorher); entfernen.forEach(c=>nach.delete(c)); docs.forEach(d=>nach.set(d.code,d));
+  const codes=[...new Set([...entfernen,...docs.map(d=>d.code)])];
+  const geaendert=codes.filter(c=>kanonisch(vorher.get(c)||null)!==kanonisch(nach.get(c)||null));
+  if(geaendert.length>400)throw new Error(kontext.grund==='wiederherstellung'
+    ? 'Dieser Schnappschuss erfordert '+geaendert.length+' Änderungen und kann nicht automatisch zurückgespielt werden (Grenze: 400). Aktueller Bestand und Sicherung bleiben erhalten. Bitte das Dev-Team um eine kontrollierte Migration dieses Schnappschusses bitten.'
+    : 'Mehr als 400 Änderungen auf einmal. Bitte kleinere Dateien verwenden; nichts gespeichert.');
+  const zeit=new Date().toISOString(), ereignis=crypto.randomUUID();
+  const protokolle=teileProtokoll(geaendert.map(code=>({code,vorher:vorher.get(code)||null,nachher:nach.get(code)||null})),
+    {zeit,benutzer,grund:kontext.grund||'manuell',datei:kontext.datei||null});
+  if(geaendert.length+protokolle.length+2>500)throw new Error('Änderungen und Protokoll benötigen zu viele Schreibvorgänge. Nichts gespeichert; bitte das Dev-Team kontaktieren.');
+  let neueMeta;
+  try{await f.runTransaction(db,async tx=>{
+    const aktuell=await tx.get(stand.ref), meta=aktuell.exists()?aktuell.data():{revision:0,sperren:{}};
+    if(meta.revision!==stand.meta.revision)throw new Error('Bestand wurde andernorts geändert. Neu laden und erneut versuchen.');
+    if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+    pruefeSperren(meta.sperren,stand.docs,[...nach.values()],kontext.einstellungen);
+    for(const code of geaendert){
+      const ref=pfad(f,o,'buchungen',code);
+      if(nach.has(code))tx.set(ref,nach.get(code));else tx.delete(ref);
+    }
+    protokolle.forEach((eintrag,i)=>tx.set(pfad(f,o,'verlauf',ereignis+'-'+i),eintrag));
+    if(kontext.einstellungen)tx.set(f.doc(db,'users',benutzer,'einstellungen','aktuell'),
+      {...festeOptionen(kontext.einstellungen),schemaVersion:SCHEMA_VERSION},{merge:true});
+    neueMeta={...meta,revision:meta.revision+1};
+    tx.set(stand.ref,neueMeta);
+  });}catch(e){arbeitsCache.delete(benutzer+'/'+o);throw e;}
+  if(auth?.currentUser?.uid===benutzer)arbeitsCache.set(benutzer+'/'+o,structuredClone({benutzer,meta:neueMeta,docs:[...nach.values()]}));
+  return docs.length;
+}
+export async function ladeAbschluesse(o){
+  await start();const benutzer=uid(),ref=pfad(teile.f,o,'verwaltung','aktuell');let d;
+  try{d=await teile.f.getDocFromServer(ref);merkeLesen(o,'abschluesse',false,benutzer);}
+  catch(e){
+    if(!netzfehler(e))throw e;
+    try{d=await teile.f.getDocFromCache(ref);}catch(cacheFehler){if(!netzfehler(cacheFehler))throw cacheFehler;}
+    merkeLesen(o,'abschluesse',true,benutzer);
+  }
+  return d?.exists()?d.data().sperren||{}:{};
+}
+export async function ladeAbschluss(o,monat){
+  const sperren=await ladeAbschluesse(o),s=sperren[monat];
+  if(!s)return null;
+  if(s.buchungen)return s; // ältere Entwürfe mit eingebettetem Beleg
+  const d=await teile.f.getDocFromServer(pfad(teile.f,o,'abschlusshistorie',s.referenz));
+  if(!d.exists())throw new Error('Abschlussbeleg fehlt. Bitte das Dev-Team kontaktieren.');
+  return d.data().stand;
+}
+export async function schliesseMonat(o,monat,opt,bestaetigung,erwartet){
+  if(!bestaetigung.vollstaendig || !bestaetigung.geprueft)throw new Error('Vollständigkeit und Prüfung bestätigen.');
+  const arbeitsstand=await leseArbeitsstand(o),{f}=teile;
+  const stand=monatsStand(arbeitsstand.docs,opt,monat);
+  if(kanonisch(stand)!==kanonisch(erwartet))throw new Error('Prüfstand geändert. Bitte neu prüfen.');
+  if(stand.hinweise.length && !bestaetigung.hinweise)throw new Error('Hinweise zuerst prüfen und bestätigen.');
+  stand.abgeschlossen=new Date().toISOString();stand.benutzer=uid();stand.bestaetigung=bestaetigung;
+  const referenz=crypto.randomUUID(),protokoll=pfad(f,o,'abschlusshistorie',referenz);
+  const {buchungen,schaetzungen,...zusammenfassung}=stand;
+  groesse({aktion:'abschluss',monat,stand});
+  await f.runTransaction(db,async tx=>{
+    const d=await tx.get(arbeitsstand.ref),m=d.exists()?d.data():{revision:0,sperren:{}};
+    if(uid()!==arbeitsstand.benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+    if(m.revision!==arbeitsstand.meta.revision)throw new Error('Bestand geändert. Neu prüfen.');
+    if(m.sperren[monat])throw new Error('Monat ist bereits abgeschlossen.');
+    const neu={...m,revision:m.revision+1,sperren:{...m.sperren,[monat]:{...zusammenfassung,referenz}}};groesse(neu);
+    tx.set(arbeitsstand.ref,neu);tx.set(protokoll,{aktion:'abschluss',monat,stand});
+  });arbeitsCache.delete(arbeitsstand.benutzer+'/'+o);return stand;
+}
+export async function oeffneMonat(o,monat,grund){
+  if(!grund || grund.trim().length<5)throw new Error('Bitte einen nachvollziehbaren Grund angeben (mindestens 5 Zeichen).');
+  await start();const {f}=teile,benutzer=uid(),ref=pfad(f,o,'verwaltung','aktuell');
+  const protokoll=pfad(f,o,'abschlusshistorie',crypto.randomUUID());
+  await f.runTransaction(db,async tx=>{
+    const d=await tx.get(ref),m=d.exists()?d.data():null;
+    if(uid()!==benutzer)throw new Error('Anmeldung geändert. Bitte erneut laden.');
+    if(!m?.sperren[monat])throw new Error('Monat ist nicht abgeschlossen.');
+    const sperren={...m.sperren};delete sperren[monat];
+    tx.set(ref,{...m,revision:m.revision+1,sperren});
+    tx.set(protokoll,{aktion:'wiedereroeffnung',monat,grund:grund.trim(),zeit:new Date().toISOString(),stand:m.sperren[monat],benutzer:uid()});
+  });arbeitsCache.delete(benutzer+'/'+o);
+}
+export async function ladeVerlauf(o,code){
+  await start();const {f}=teile;
+  const s=await f.getDocs(f.query(f.collection(db,'users',uid(),'objekte',o,'verlauf'),f.where('codes','array-contains',code)));
+  return s.docs.map(d=>d.data()).map(e=>({...e,...e.aenderungen.find(a=>a.code===code)})).sort((a,b)=>b.zeit.localeCompare(a.zeit));
 }
 
 /* --- Schnappschüsse --- */

@@ -60,9 +60,27 @@ service cloud.firestore {
       match /objekte/{objektId} {
         allow read, write: if ich(uid);
 
+        function mitRevision() {
+          let p = /databases/$(database)/documents/users/$(uid)/objekte/$(objektId)/verwaltung/aktuell;
+          return getAfter(p).data.revision == (exists(p) ? get(p).data.revision : 0) + 1;
+        }
         match /buchungen/{code} {
-          allow read, delete: if ich(uid);
-          allow create, update: if ich(uid) && gueltigeBuchung(code);
+          allow read: if ich(uid);
+          allow delete: if ich(uid) && mitRevision();
+          allow create, update: if ich(uid) && gueltigeBuchung(code) && mitRevision();
+        }
+        match /verwaltung/aktuell {
+          allow read: if ich(uid);
+          allow create: if ich(uid) && request.resource.data.revision == 1;
+          allow update: if ich(uid) && request.resource.data.revision == resource.data.revision + 1;
+        }
+        match /verlauf/{id} {
+          allow read, create: if ich(uid);
+          allow update, delete: if false;
+        }
+        match /abschlusshistorie/{id} {
+          allow read, create: if ich(uid);
+          allow update, delete: if false;
         }
 
         /* Ein Schnappschuss, der überschrieben werden kann, schützt nicht vor

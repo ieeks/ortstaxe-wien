@@ -38,7 +38,8 @@ h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-si
 .wolke .stand{font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-left:auto}
 .wolke .stand.offen{color:var(--flag)}
 .wolke select{font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:2px;background:#fff}
-@media print{.wolke{display:none}}
+@media print{
+#monatsarbeit{display:none!important}.wolke{display:none}}
 
 /* Tabellen dürfen breiter sein als der Bildschirm — dann scrollt die Karte,
    nicht die Seite. Ohne das bricht auf dem Handy das ganze Layout aus. */
@@ -127,6 +128,7 @@ details p,details li{color:var(--ink-2)}
 .print-only{display:none}
 @media(max-width:700px){.wrap{padding:20px 12px 60px}table{font-size:12.5px}.band{width:110px}.quota-big{font-size:30px}}
 @media print{
+#monatsarbeit{display:none!important}
   @page{size:A4 portrait;margin:14mm}
   body{background:#fff;font-size:10.5pt}
   .wrap{max-width:none;padding:0}
@@ -266,6 +268,23 @@ details p,details li{color:var(--ink-2)}
     <div style="font-family:var(--cond);font-size:19pt;font-weight:700;text-transform:uppercase">Ortstaxe Wien</div>
     <div class="mono" style="font-size:8.5pt" id="printMeta"></div>
   </div>
+
+  <section id="monatsarbeit" class="card hide" style="padding:20px;margin:20px 0">
+    <h2>Monatsabschluss &amp; Belege</h2>
+    <p>Die Prüfung bezieht sich auf gespeicherte Buchungen. Ein Abschluss bestätigt keine Abgabe bei VIETour.</p>
+    <label>Monat <select id="abschlussMonat"></select></label>
+    <p id="abschlussStatus" role="status"></p>
+    <p id="abschlussVergleich" role="status"></p>
+    <p id="abschlussWarnungen" class="note"></p>
+    <div id="abschlussChecks">
+      <p><label><input type="checkbox" id="abschlussVoll"> Alle Buchungen und Stornierungen dieses Monats sind vollständig erfasst.</label></p>
+      <p><label><input type="checkbox" id="abschlussPruefung"> Beträge und Belege habe ich geprüft.</label></p>
+      <p><label><input type="checkbox" id="abschlussHinweise"> Angezeigte Hinweise und Schätzungen habe ich geprüft und akzeptiert.</label></p>
+    </div>
+    <div class="btnrow"><button id="monatSchliessen">Geprüft abschließen</button><button id="monatOeffnen" class="ghost">Mit Grund wieder öffnen</button><button id="belegpaket" class="ghost">Belegpaket als ZIP</button></div>
+    <p class="note">Geschlossene Monate behalten ihren Abschlussstand. Änderungen an betroffenen Buchungen erfordern das Wiederöffnen. Das Paket enthält PDF, CSV und Einstellungen; externe Originalbelege sind nicht enthalten.</p>
+    <details><summary>Änderungsverlauf je Buchung</summary><label>Buchung <input id="verlaufCode" list="verlaufCodes" placeholder="Bestätigungs-Code"><datalist id="verlaufCodes"></datalist></label> <button id="verlaufLaden" class="ghost">Verlauf anzeigen</button><pre id="verlaufInhalt" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
+  </section>
 
   <h2 id="quota-h">Kurzzeitvermietung — 90 Tage pro Kalenderjahr</h2>
   <div class="card quota" id="quota"></div>

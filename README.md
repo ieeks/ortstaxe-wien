@@ -124,3 +124,87 @@ inserierte Tage sind hier nicht erfasst.
 
 Selbstgebautes Werkzeug zur Vorbereitung der eigenen Meldung, keine Steuerberatung.
 Maßgeblich sind das WTFG und die Auskunft der MA 6.
+
+## Monatsabschluss, Schutz und Belegpaket
+
+Nach Anmeldung steht im Ergebnisbereich **Monatsabschluss & Belege** zur Verfügung:
+
+1. Monat wählen, Hinweise prüfen und Vollständigkeit sowie Belegprüfung bestätigen.
+2. **Geprüft abschließen** friert Buchungen, Einstellungen und Prüfbestätigungen ein.
+   Das ist ein interner Prüfstatus, keine Bestätigung einer VIETour-Meldung.
+3. Änderungen, neue Buchungen, Stornierungen oder Wiederherstellungen, die den
+   geschlossenen Monat berühren, werden vor dem Schreiben abgewiesen. Bei
+   Aufenthalten über Monatsgrenzen schützt der Abschluss die ganze Buchung.
+   Auch abweichende Recheneinstellungen werden im Schreibweg des Objekts blockiert.
+4. **Mit Grund wieder öffnen** gibt den Monat wieder frei. Der bisherige Abschluss
+   und der Grund bleiben in der Abschlusshistorie gespeichert.
+5. **Belegpaket als ZIP** enthält ein direkt erzeugtes PDF, eine UTF-8-Buchungs-CSV,
+   Abschlussdaten und Einstellungen als JSON. Die Buchungs-CSV enthält vollständige
+   Aufenthalte; die Summe im PDF gilt nur für den gewählten Monat. Airbnb-Originalbelege
+   sind nicht enthalten. Das PDF nutzt WinAnsi; andere Schriftzeichen bleiben in CSV/JSON erhalten.
+
+Der **Änderungsverlauf je Buchung** beginnt mit Einführung dieser Version. Er zeigt
+Import, manuelle Änderung, Wiederherstellung und Löschen mit Vorher-/Nachher-Werten.
+Unveränderte Buchungen erzeugen keinen neuen Eintrag. Bestehende alte Änderungen
+werden nicht nachträglich erfunden. Das Protokoll ist keine zertifizierte revisionssichere Archivierung.
+
+### Speicherung und Rollout
+
+- Neue Pfade je Objekt: `verwaltung/aktuell`, `verlauf/{id}` und `abschlusshistorie/{id}`.
+  Die Verwaltung enthält kompakte Monatssperren mit Belegreferenz; vollständige
+  Buchungslisten stehen nur im unveränderlichen Abschlussbeleg.
+- Buchungsänderungen, Verlauf, Einstellungen und Objektversion werden in einer
+  Firestore-Transaktion gemeinsam geschrieben. Der im Arbeitsspeicher gehaltene
+  Bestand ist an Benutzer, Objekt und Revision gebunden. Beim normalen Autospeichern
+  wird nur die Revision in der Transaktion gelesen, nicht nochmals die ganze Sammlung.
+  Ein ausdrückliches Neuladen aktualisiert Bestand und Revision. Monatsabschluss und Wiederöffnen
+  verwenden dieselbe Objektversion; konkurrierende Änderungen erfordern erneutes Laden.
+- Änderungen und Abschlüsse benötigen eine Serververbindung. Offline bleibt die
+  CSV-Berechnung verfügbar; ein fehlgeschlagener Import stellt die vorherige Anzeige wieder her.
+- Maximal 400 geänderte Buchungen je Vorgang, maximale JSON-Nutzlast eines
+  Protokoll-/Verwaltungsdokuments 700 kB. Der Verlauf wird bei Bedarf verlustfrei
+  auf mehrere Dokumente derselben Transaktion aufgeteilt. Eine einzelne zu große
+  Änderung oder ein zu großer Abschlussbeleg wird weiterhin vollständig abgelehnt.
+  Unveränderte Zeilen zählen nicht mit. Bei Wiederherstellungen über 400 Änderungen
+  ist ein gesonderter, kontrollierter Migrationslauf durch das Dev-Team nötig;
+  der aktuelle Bestand und die Sicherung werden nicht verändert.
+- **Rules und Anwendung gemeinsam ausrollen.** Die neuen Rules verlangen für jeden
+  Buchungsschreibvorgang die atomar erhöhte Objektversion. Alte offene Tabs müssen
+  nach dem Rollout neu geladen werden. Die Rules wurden nicht automatisch produktiv deployt.
+- Die Monatssperre ist eine Schutzfunktion der Anwendung. Der Eigentümer kann über
+  eigene API-Clients oder die Firebase-Administration Daten verändern; sie ist keine
+  Berechtigungsgrenze gegen den Eigentümer selbst. Neue Protokolle können über die
+  Client-Rules nicht überschrieben oder gelöscht werden.
+- Eingefrorene Abschlüsse sind die maßgebliche Ablage für geschlossene Monate.
+  Die allgemeine Rechneransicht verwendet weiterhin die aktuellen Einstellungen;
+  im Abschlussbereich wird eine abweichende aktuelle Summe ausdrücklich angezeigt.
+
+### Tests
+
+```sh
+node test/node-selftest.mjs
+node test/daten-transaktionen.mjs
+node test/integration.mjs
+```
+
+Der Node-Transaktionstest führt den echten Datenzugriffscode mit einem simulierten SDK
+und kontrollierten Commitfehlern aus. Die Chromium-Integration verwendet die sichtbare
+Oberfläche und eine Datenbankattrappe. Beides ersetzt nicht den Rules-Test gegen den
+Firestore-Emulator oder einen Test der echten Anmeldung.
+
+Rules-Prüfung im lokalen Demo-Emulator (kein Zugriff auf das Produktivprojekt):
+
+```sh
+java -jar firestore.jar --host 127.0.0.1 --port 8088 --project_id demo-ortstaxe-review --rules firestore.rules
+# In einer zweiten Konsole:
+node test/firestore-regeln.mjs
+```
+
+Validierung nach dem PR-Review siehe `REVIEW-NOTES-PR18.md`. Die echte Google-Anmeldung
+und ein produktiver Rollout sind nicht Teil dieser Validierung.
+
+Im Abschluss und PDF sind **steuerpflichtige Nächte** dieselbe Summe wie in der
+Meldemonats-Tabelle. Befreite Nächte stehen separat und erzeugen einen Prüfhinweis.
+Einstellungsänderungen bleiben bei vorhandenen Abschlüssen geschützt; eine Ablehnung
+nennt jetzt alle betroffenen Felder und Monate, auch bei einer Eingabe in einem
+anderen, noch offenen Monat.
