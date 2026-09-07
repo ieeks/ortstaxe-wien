@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bauplan — Ortstaxe Wien</title>
+<meta name="description" content="Wie das Ortstaxe-Werkzeug rechnet, was jede Datei tut und wo die Daten liegen.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Palette und Schriften stammen aus index.html — die Doku soll aussehen, als
+   gehöre sie zum Werkzeug, nicht als läge sie daneben. Zusätzlich ein
+   dunkles Set: gelesen wird das hier meist am Telefon. */
+:root{
+  --paper:#E9EBEE;
+  --card:#FFFFFF;
+  --ink:#101820;
+  --ink-2:#4A5462;
+  --line:#C9CFD6;
+  --line-soft:#E2E6EA;
+  --r32:#8A94A6;
+  --r50:#186A57;
+  --r80:#A85B12;
+  --flag:#B3261E;
+  --akzent:#186A57;
+  --akzent-weich:#F2F8F5;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --cond:'IBM Plex Sans Condensed','IBM Plex Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#101419; --card:#171C23; --ink:#E3E8EE; --ink-2:#98A3B2;
+    --line:#2B333D; --line-soft:#232A33;
+    --r32:#9BA5B5; --r50:#4FAC92; --r80:#D28F45; --flag:#E4736A;
+    --akzent:#4FAC92; --akzent-weich:#16241F;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#101419; --card:#171C23; --ink:#E3E8EE; --ink-2:#98A3B2;
+  --line:#2B333D; --line-soft:#232A33;
+  --r32:#9BA5B5; --r50:#4FAC92; --r80:#D28F45; --flag:#E4736A;
+  --akzent:#4FAC92; --akzent-weich:#16241F;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15.5px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+img{max-width:100%}
+.wrap{max-width:1000px;margin:0 auto;padding:40px 20px 96px}
+.prosa{max-width:68ch}
+
+/* --- Kopf --- */
+header{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:30px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+h1{
+  font-family:var(--cond);font-weight:700;font-size:clamp(30px,6vw,44px);
+  letter-spacing:-.015em;text-transform:uppercase;margin:6px 0 8px;text-wrap:balance;
+}
+.lede{font-size:17px;color:var(--ink-2);max-width:60ch;margin:0}
+.fakten{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.fakt{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.02em;
+  border:1px solid var(--line);border-radius:2px;padding:5px 9px;color:var(--ink-2);
+  background:var(--card);
+}
+.fakt b{color:var(--ink);font-weight:600}
+.zurueck{
+  display:inline-block;margin-bottom:14px;font-family:var(--cond);font-size:13px;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--akzent);text-decoration:none;
+}
+.zurueck:hover{text-decoration:underline}
+
+/* --- Inhalt --- */
+nav.toc{
+  background:var(--card);border:1px solid var(--line);border-radius:2px;
+  padding:16px 18px;margin-bottom:38px;
+}
+nav.toc ol{
+  margin:0;padding:0;list-style:none;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:2px 22px;
+}
+nav.toc li{display:flex;gap:9px;align-items:baseline;padding:3px 0}
+nav.toc .nr{font-family:var(--mono);font-size:11px;color:var(--ink-2);min-width:1.4em}
+nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--akzent);color:var(--akzent)}
+
+/* --- Abschnitte --- */
+section{margin-bottom:44px;scroll-margin-top:18px}
+h2{
+  font-family:var(--cond);font-weight:600;font-size:15px;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--ink-2);margin:0 0 14px;
+  display:flex;align-items:baseline;gap:10px;
+}
+h2 .nr{font-family:var(--mono);font-size:12px;color:var(--akzent);font-weight:500}
+h3{
+  font-family:var(--cond);font-weight:600;font-size:17px;letter-spacing:.01em;
+  margin:26px 0 8px;color:var(--ink);
+}
+p{margin:0 0 13px}
+a{color:var(--akzent)}
+strong{font-weight:600}
+code,.mono{font-family:var(--mono);font-size:.88em}
+p code,li code,td code{background:var(--line-soft);border-radius:2px;padding:1px 4px;color:var(--ink)}
+
+/* --- Karten --- */
+.karte{background:var(--card);border:1px solid var(--line);border-radius:2px;padding:18px 20px}
+.karte + .karte{margin-top:12px}
+.gitter{display:grid;gap:12px}
+@media(min-width:720px){ .gitter.zwei{grid-template-columns:1fr 1fr} }
+
+/* --- Merksatz: das Wichtigste eines Abschnitts --- */
+.merk{
+  border-left:3px solid var(--akzent);background:var(--akzent-weich);
+  padding:12px 16px;margin:16px 0;border-radius:0 2px 2px 0;
+}
+.merk p:last-child{margin-bottom:0}
+.warn{border-left-color:var(--flag);background:transparent}
+
+/* --- Tabellen --- */
+.tabelle{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:2px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{
+  font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:11.5px;
+  color:var(--ink-2);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--line);
+}
+tr:last-child td{border-bottom:none}
+td.datei{font-family:var(--mono);font-size:12.5px;white-space:nowrap;color:var(--ink)}
+.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13px}
+.leise{color:var(--ink-2);font-family:var(--mono);font-size:12px}
+
+/* --- Satz-Zeitstrahl: die Farben sind dieselben, mit denen das Werkzeug
+       die Bänder zeichnet --- */
+.strahl{display:flex;margin:18px 0 6px;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.spanne{flex:1;padding:11px 13px;color:#fff;min-width:0}
+.s32{background:var(--r32)}
+.s50{background:var(--r50)}
+.s80{background:var(--r80)}
+.spanne .satz{font-family:var(--cond);font-weight:700;font-size:20px;line-height:1.1;display:block}
+.spanne .zeit{font-family:var(--mono);font-size:11px;opacity:.92;display:block;margin-top:3px}
+.stichtage{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--ink-2);flex-wrap:wrap;gap:6px}
+
+/* --- Ablauf: nummeriert, weil es wirklich eine Reihenfolge ist.
+       Nummer und Text sind GENAU zwei Grid-Items — der Text steckt in .txt.
+       Ohne diese Klammer landete das dritte Kind in Zeile 2, Spalte 1 und
+       dehnte die auto-Spalte auf die Breite seines Fließtexts. --- */
+ol.ablauf{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:schritt}
+ol.ablauf li{
+  display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:baseline;
+  background:var(--card);border:1px solid var(--line);border-radius:2px;padding:12px 15px;
+}
+ol.ablauf li::before{
+  counter-increment:schritt;content:counter(schritt);
+  font-family:var(--mono);font-size:11px;color:var(--akzent);
+  border:1px solid var(--line);border-radius:2px;padding:2px 7px;
+}
+ol.ablauf .txt b{font-family:var(--cond);font-size:15.5px;display:block;margin-bottom:2px}
+ol.ablauf .txt span{color:var(--ink-2);font-size:14px}
+
+ul.liste{margin:0 0 13px;padding-left:19px}
+ul.liste li{margin-bottom:6px}
+ul.liste li::marker{color:var(--ink-2)}
+
+pre.baum{font-family:var(--mono);font-size:12.5px;line-height:1.7;margin:0;overflow-x:auto;color:var(--ink)}
+pre.baum .k{color:var(--ink-2)}
+
+footer{border-top:1px solid var(--line);margin-top:56px;padding-top:16px;color:var(--ink-2);font-size:13px}
+a:focus-visible,nav.toc a:focus-visible{outline:2px solid var(--akzent);outline-offset:2px;border-radius:1px}
+@media(max-width:560px){
+  .wrap{padding:26px 15px 70px}
+  .strahl{flex-direction:column}
+  .spanne{min-width:100%}
+}
+@media print{
+  body{background:#fff}
+  .karte,.tabelle,nav.toc,ol.ablauf li{border-color:#bbb}
+  nav.toc{display:none}
+  section{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="zurueck" href="./">← Zurück zum Werkzeug</a>
+  <div class="eyebrow">Werkzeugdokumentation</div>
+  <h1>Bauplan Ortstaxe Wien</h1>
+  <p class="lede">Was das Werkzeug tut, wie es rechnet, und welche Datei wofür zuständig ist.</p>
+  <div class="fakten">
+    <span class="fakt"><b>manuel.tools/ortstaxe-wien/</b></span>
+    <span class="fakt">kein Build, kein Framework</span>
+    <span class="fakt">native <b>ES-Module</b></span>
+    <span class="fakt">3&nbsp;externe Abhängigkeiten</span>
+    <span class="fakt">~<b>3.900</b> Zeilen</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Inhalt">
+  <ol>
+    <li><span class="nr">01</span><a href="#was">Was es tut</a></li>
+    <li><span class="nr">02</span><a href="#rechnen">Wie gerechnet wird</a></li>
+    <li><span class="nr">03</span><a href="#befreiung">Zwei Befreiungen</a></li>
+    <li><span class="nr">04</span><a href="#bildschirm">Der Bildschirm</a></li>
+    <li><span class="nr">05</span><a href="#dateien">Welche Datei was macht</a></li>
+    <li><span class="nr">06</span><a href="#quelle">Woher die Zahlen kommen</a></li>
+    <li><span class="nr">07</span><a href="#abschluss">Monatsabschluss</a></li>
+    <li><span class="nr">08</span><a href="#speichern">Regeln beim Speichern</a></li>
+    <li><span class="nr">09</span><a href="#rollout">Datenbank und Rollout</a></li>
+    <li><span class="nr">10</span><a href="#tests">Was geprüft wird</a></li>
+    <li><span class="nr">11</span><a href="#grenzen">Grenzen</a></li>
+  </ol>
+</nav>
+
+<section id="was">
+  <h2><span class="nr">01</span> Was es tut</h2>
+  <div class="prosa">
+    <p>Das Werkzeug liest den Reservierungs-Export von Airbnb als CSV und rechnet daraus die <strong>Wiener Ortstaxe je Meldemonat</strong> aus. Es sagt dir, was du an die MA&nbsp;6 überweist, mit welchem Verwendungszweck, und was in die jährliche Abgabenerklärung gehört.</p>
+    <p>Es läuft vollständig im Browser. Keine Datei verlässt das Gerät, solange du dich nicht anmeldest — und auch dann geht nur die <em>Buchung</em> in die Datenbank, nie eine gerechnete Zahl.</p>
+  </div>
+  <ol class="ablauf">
+    <li><div class="txt"><b>CSV hineinziehen</b><span>Airbnb-Export, ohne Vorbereitung. Der Parser kommt mit Komma und Semikolon zurecht und erkennt selbst, ob die Datei TT/MM oder MM/TT schreibt.</span></div></li>
+    <li><div class="txt"><b>Gastbeträge ergänzen</b><span>Wo die Spalte „Vom Gast bezahlt“ fehlt, schätzt das Werkzeug über die Servicegebühr und sagt dazu, dass es geschätzt hat. Einzeln nachtragen ist jederzeit möglich.</span></div></li>
+    <li><div class="txt"><b>Ablesen und melden</b><span>Meldemonat, Überweisung, Jahressumme, 90-Tage-Zähler. Als PDF drucken oder als CSV exportieren.</span></div></li>
+    <li><div class="txt"><b>Optional: speichern</b><span>Mit Google-Anmeldung landet der Bestand in Firestore und überlebt den Tab. Ohne Anmeldung verhält sich alles exakt wie vorher.</span></div></li>
+  </ol>
+</section>
+
+<section id="rechnen">
+  <h2><span class="nr">02</span> Wie gerechnet wird</h2>
+  <div class="prosa">
+    <p>Jede Buchung wird in <strong>einzelne Nächte</strong> zerlegt. Jede Nacht bekommt den Satz, der an diesem Kalendertag galt, und wird dem Monat zugeschlagen, in dem sie liegt. Deshalb kann eine einzige Buchung in zwei Meldeperioden fallen — der Meldemonat ist eine abgeleitete Sicht, keine Eigenschaft der Buchung.</p>
+  </div>
+
+  <div class="strahl" role="img" aria-label="Steuersätze im Zeitverlauf: 3,2 Prozent bis 30.06.2026, dann 5 Prozent bis 30.06.2027, danach 8 Prozent">
+    <div class="spanne s32"><span class="satz">3,2 %</span><span class="zeit">bis 30.06.2026</span></div>
+    <div class="spanne s50"><span class="satz">5 %</span><span class="zeit">01.07.2026 – 30.06.2027</span></div>
+    <div class="spanne s80"><span class="satz">8 %</span><span class="zeit">ab 01.07.2027</span></div>
+  </div>
+  <div class="stichtage"><span>← Stichtag 01.07.2026</span><span>Stichtag 01.07.2027 →</span></div>
+
+  <h3>Warum nicht einfach „mal 3,2 %“</h3>
+  <div class="prosa">
+    <p>Gerechnet wird auf den Betrag <strong>inklusive</strong> enthaltener Ortstaxe. Aus dem Satz <code>e</code> wird deshalb eine Schlüsselzahl <code>e / (ustF + e)</code>, die direkt auf das Gastentgelt angewandt wird. Bis 30.06.2026 steckt zusätzlich der 11-%-Pauschalabzug nach §&nbsp;12 Abs.&nbsp;2 lit.&nbsp;c WTFG im effektiven Satz — im Code als <code>0.032&nbsp;*&nbsp;0.89</code>.</p>
+    <p>Diese Zahlen sind gegen den Ortstaxerechner der Stadt Wien geprüft und stehen unter Änderungsverbot:</p>
+  </div>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Satz</th><th class="num">ohne USt</th><th class="num">bei 10 % USt</th></tr></thead>
+      <tbody>
+        <tr><td>3,2 % <span class="leise">(mit Pauschalabzug)</span></td><td class="num">0,027691</td><td class="num">0,025237</td></tr>
+        <tr><td>5 %</td><td class="num">0,047619</td><td class="num">0,043478</td></tr>
+        <tr><td>8 %</td><td class="num">0,074074</td><td class="num">0,067797</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Der Prüffall</h3>
+  <div class="merk">
+    <p>Eine Buchung <strong>18.06.2026 – 19.07.2026</strong> mit 1.644,80&nbsp;€ Gastentgelt, Basis ohne USt, Gebühr 0 muss <strong>64,58&nbsp;€</strong> ergeben: 19,10&nbsp;€ für 13 Nächte im Juni, 45,48&nbsp;€ für 18 Nächte im Juli. Der Fall läuft im Selbsttest mit und schlägt an, sobald jemand an der Rechnung dreht.</p>
+  </div>
+</section>
+
+<section id="befreiung">
+  <h2><span class="nr">03</span> Zwei Befreiungen, zwei Zähler</h2>
+  <p class="prosa">Zwei Regelwerke greifen gleichzeitig, und sie zählen unterschiedlich. Das Werkzeug führt beide getrennt.</p>
+  <div class="gitter zwei">
+    <div class="karte">
+      <h3 style="margin-top:0">Drei-Monats-Befreiung</h3>
+      <p style="margin-bottom:0"><span class="leise">§ 11 Abs. 3 WTFG</span><br>
+      Wer länger als drei Monate ununterbrochen bleibt, ist befreit — und zwar für den <strong>gesamten</strong> Aufenthalt, nicht erst ab dem vierten Monat. Solche Nächte tauchen in der Meldung mit null Steuer auf und werden im Monatsabschluss getrennt ausgewiesen.</p>
+    </div>
+    <div class="karte">
+      <h3 style="margin-top:0">90-Tage-Zähler</h3>
+      <p style="margin-bottom:0"><span class="leise">Wiener Bauordnung</span><br>
+      Zählt Kurzzeitvermietung übers Kalenderjahr, getrennt nach <strong>kurz</strong> (bis 30 Nächte), <strong>grau</strong> (31 Nächte bis 3 Monate) und <strong>lang</strong> (befreit). Das ist eine Nutzungsgrenze, keine Steuer — deshalb ein eigener Zähler mit eigener Anzeige.</p>
+    </div>
+  </div>
+  <div class="merk warn">
+    <p><strong>Fällig</strong> ist die Abgabe jeweils am 15. des Folgemonats (§&nbsp;13 Abs.&nbsp;1 WTFG). Dazu kommt bis zum <strong>15. Februar</strong> die elektronische Abgabenerklärung für das Vorjahr.</p>
+  </div>
+</section>
+
+<section id="bildschirm">
+  <h2><span class="nr">04</span> Der Bildschirm</h2>
+  <p class="prosa">Von oben nach unten, so wie die Seite gelesen wird:</p>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Bereich</th><th>Was dort steht</th></tr></thead>
+      <tbody>
+        <tr><td class="datei">Ablagefläche</td><td>CSV hineinziehen oder auswählen. Darunter der aufklappbare Ablauf.</td></tr>
+        <tr><td class="datei">Einstellungen</td><td>USt-Basis, Gastgebergebühr, Gast-Servicegebühr, UID, Zählweise, Abgabenkonto. Sie gehen in jede Rechnung ein.</td></tr>
+        <tr><td class="datei">Wolken-Leiste</td><td>Anmeldung, Objektwahl, Speicherstand. Bleibt verborgen, wenn die Datenbank nicht erreichbar ist.</td></tr>
+        <tr><td class="datei">Monatsabschluss</td><td>Prüfen, abschließen, Belegpaket ziehen, Änderungsverlauf einsehen. Nur mit Anmeldung sichtbar.</td></tr>
+        <tr><td class="datei">90-Tage-Zähler</td><td>Kurzzeitvermietung pro Kalenderjahr, mit Restkontingent.</td></tr>
+        <tr><td class="datei">Meldung pro Monat</td><td>Die Tabelle für VIETour: Nächte, Grundlage, Ortstaxe je Meldemonat.</td></tr>
+        <tr><td class="datei">Überweisungen</td><td>Was an die MA 6 geht, mit Verwendungszweck aus Abgabenkonto plus MMJJJJ.</td></tr>
+        <tr><td class="datei">Abgabenerklärung</td><td>Jahressummen für die Februar-Meldung.</td></tr>
+        <tr><td class="datei">Buchungen</td><td>Jede Zeile einzeln, mit editierbarem Gastbetrag und der Aufteilung auf Monate.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prosa" style="margin-top:14px">Die PDFs entstehen über Print-CSS, nicht über eine Bibliothek. <code>body.print-months</code> blendet für die Kurzfassung alles außer der Meldetabelle aus.</p>
+</section>
+
+<section id="dateien">
+  <h2><span class="nr">05</span> Welche Datei was macht</h2>
+  <p class="prosa">Die Trennung ist keine Kosmetik: Weil <code>kern.js</code> kein DOM anfasst, kann der Selbsttest den echten Rechenweg prüfen, statt ihn nachzubauen.</p>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Datei</th><th class="num">Zeilen</th><th>Aufgabe</th></tr></thead>
+      <tbody>
+        <tr><td class="datei">index.html</td><td class="num">—</td><td>Markup, CSS und Print-Layout. Lädt <code>oberflaeche.js</code> als Modul.</td></tr>
+        <tr><td class="datei">js/kern.js</td><td class="num">742</td><td><strong>Der Rechenkern.</strong> Reine Funktionen, kein <code>document</code>. CSV-Parser, Datumsordnung, Geldparser, <code>compute</code>, 90-Tage-Zähler, Jahressummen, die drei CSV-Exporte.</td></tr>
+        <tr><td class="datei">js/oberflaeche.js</td><td class="num">975</td><td><strong>Alles mit DOM.</strong> Render, Handler, Sitzungszustand, Import- und Speicherkette, Sperren. Rechnet nichts selbst.</td></tr>
+        <tr><td class="datei">js/daten.js</td><td class="num">306</td><td><strong>Die einzige Stelle, die mit Firebase spricht.</strong> Anmeldung, Laden, atomares Schreiben, Schnappschüsse, Monatssperren.</td></tr>
+        <tr><td class="datei">js/abschluss.js</td><td class="num">45</td><td>Reine Monatsprüfung und Sperrvergleich. Nutzt denselben Rechenkern wie die Anzeige.</td></tr>
+        <tr><td class="datei">js/belegpaket.js</td><td class="num">59</td><td>ZIP und PDF von Hand erzeugt — ohne CDN, ohne Build. Byteweise geschriebene ZIP-Header, ein Text-PDF in WinAnsi.</td></tr>
+        <tr><td class="datei">js/firebase-config.js</td><td class="num">29</td><td>Projektdaten und die gepinnte SDK-Version.</td></tr>
+        <tr><td class="datei">selftest.js</td><td class="num">958</td><td>Prüfungen des Rechenkerns. Wird nur bei <code>?selftest</code> nachgeladen.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Die wichtigsten Funktionen im Kern</h3>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Funktion</th><th>Tut</th></tr></thead>
+      <tbody>
+        <tr><td class="datei">parseCSV</td><td>Eigener Parser, kommt mit <code>,</code> und <code>;</code> sowie Quotes zurecht. Geschrieben wird nach RFC 4180.</td></tr>
+        <tr><td class="datei">findCol</td><td>Normalisiert Spaltennamen, matcht deutsche und englische Kopfzeilen, dann Teilstring-Fallback.</td></tr>
+        <tr><td class="datei">datumsOrdnung</td><td>Entscheidet einmal für die ganze Datei, ob TT/MM oder MM/TT gilt.</td></tr>
+        <tr><td class="datei">leseGeld</td><td>Prüft den ganzen String gegen ein Zahlenformat und liefert <code>{wert, status}</code> — ein unlesbarer Betrag wird gemeldet, nicht still als 0 gelesen.</td></tr>
+        <tr><td class="datei">compute</td><td>Das Herzstück: zerlegt jede Buchung in Nächte, ordnet Satz und Meldemonat zu, erkennt Befreiungen.</td></tr>
+        <tr><td class="datei">occupancy</td><td>Der 90-Tage-Zähler nach kurz / grau / lang.</td></tr>
+        <tr><td class="datei">alsCsvZeilen</td><td>Führt gespeicherte Dokumente in genau die Tabelle zurück, die <code>compute</code> ohnehin liest — damit gibt es keinen zweiten Weg in die Berechnung.</td></tr>
+        <tr><td class="datei">verschmelzeBuchungen</td><td>Führt Import und Bestand zusammen, statt zu ersetzen. Ein von Hand gesetzter Gastbetrag überlebt einen Import, der an dieser Stelle nichts mitbringt.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="quelle">
+  <h2><span class="nr">06</span> Woher die Zahlen gerade kommen</h2>
+  <div class="prosa">
+    <p>Es gibt zwei mögliche Quellen, und genau eine Funktion entscheidet: <code>aktuelleZeilen()</code>.</p>
+  </div>
+  <div class="gitter zwei">
+    <div class="karte">
+      <h3 style="margin-top:0">Liegt ein Bestand aus der Datenbank vor?</h3>
+      <p style="margin-bottom:0">Dann <strong>hat er Vorrang</strong>. Nach dem ersten Speichern ist die Datenbank die Wahrheit, nicht mehr die Datei.</p>
+    </div>
+    <div class="karte">
+      <h3 style="margin-top:0">Sonst</h3>
+      <p style="margin-bottom:0">Gilt die zuletzt geladene CSV. Das ist der Zustand ohne Anmeldung — und der vollständige Funktionsumfang des Werkzeugs.</p>
+    </div>
+  </div>
+  <div class="merk">
+    <p>Daraus folgt etwas Feines: Ein <strong>geleertes Eingabefeld</strong> hebt die Überschreibung auf und gibt den Wert der <em>aktuellen</em> Quelle frei — im CSV-Betrieb den Dateiwert, danach den gespeicherten. Deshalb ist <code>gastbetragQuelle</code> ein Vergleich und kein Herkunftsvermerk: „manuell“ heißt, jemand hat etwas anderes gesetzt als die Quelle sagt.</p>
+  </div>
+</section>
+
+<section id="abschluss">
+  <h2><span class="nr">07</span> Monatsabschluss und Belegpaket</h2>
+  <div class="prosa">
+    <p>Ein Abschluss friert einen geprüften Stand ein. Er bestätigt <em>keine</em> Abgabe bei VIETour — er dokumentiert, was du geprüft hast und wann.</p>
+    <p>Zum Abschließen bestätigst du Vollständigkeit und Belegprüfung; liegen rechnerische Hinweise vor, musst du auch die ausdrücklich akzeptieren. Danach sind die betroffenen Buchungen gesperrt: Änderungen — auch neue Buchungen, Stornierungen und Wiederherstellungen — werden im gemeinsamen Speicherweg abgewiesen. Wiederöffnen verlangt einen Grund von mindestens fünf Zeichen und behält den alten Abschluss im Protokoll.</p>
+  </div>
+  <h3>Was im ZIP liegt</h3>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Datei</th><th>Inhalt</th></tr></thead>
+      <tbody>
+        <tr><td class="datei">monatsabschluss.pdf</td><td>Der lesbare Beleg: Ortstaxe, steuerpflichtige und befreite Nächte, Einstellungen, Prüfhinweise, alle Buchungen.</td></tr>
+        <tr><td class="datei">buchungen.csv</td><td>Dieselben Buchungen maschinenlesbar, mit BOM für Excel.</td></tr>
+        <tr><td class="datei">abschluss.json</td><td>Der vollständige eingefrorene Stand.</td></tr>
+        <tr><td class="datei">einstellungen.json</td><td>Die Einstellungen, mit denen gerechnet wurde.</td></tr>
+        <tr><td class="datei">LESEMICH.txt</td><td>Was das Paket ist — und was es nicht ist.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="merk warn">
+    <p><strong>Steuerpflichtige und befreite Nächte stehen getrennt.</strong> Ein Monat mit einem Langzeitgast kann 34 Nächte umfassen, von denen nur 3 steuerpflichtig sind. Das PDF weist beide Zahlen aus, damit der Beleg nicht mit der Meldetabelle streitet.</p>
+    <p style="margin-bottom:0">Externe Originalbelege von Airbnb sind <strong>nicht</strong> enthalten und weiter separat aufzubewahren.</p>
+  </div>
+</section>
+
+<section id="speichern">
+  <h2><span class="nr">08</span> Die Regeln beim Speichern</h2>
+  <div class="prosa">
+    <p>Der Synchronisierungsteil ist der heikelste Teil des Werkzeugs, weil dort mehrere Dinge gleichzeitig passieren: Ein Autospeichern läuft, du wechselst das Objekt, ein Import ist unterwegs. Die folgenden Regeln sind keine Stilfragen — jede steht für einen Fehler, der einmal da war.</p>
+  </div>
+  <div class="karte">
+    <h3 style="margin-top:0">Gespeichert wird die Buchung, nie der Meldemonat</h3>
+    <p style="margin-bottom:0">Eine Buchung vom 18.06. bis 19.07. gehört in zwei Meldeperioden, der 90-Tage-Zähler rechnet übers Kalenderjahr, die Drei-Monats-Befreiung über den ganzen Aufenthalt. Der Monat ist abgeleitet. Käme er in die Datenbank, gäbe es zwei Wahrheiten, die auseinanderlaufen.</p>
+  </div>
+  <div class="karte">
+    <h3 style="margin-top:0">Jeder Auftrag hängt an drei Dingen — festgehalten beim Einreihen</h3>
+    <ul class="liste" style="margin-bottom:0">
+      <li><code>ziel</code> — an welchem Objekt. Sonst landet nach einem Objektwechsel der Bestand von Wohnung A unter Wohnung B.</li>
+      <li><code>bestandVersion</code> — an welchem Bestand. Steigt bei Objektwechsel, Laden, Import, Wiederherstellung, neuer Datei. Ein Auftrag aus einem älteren Bestand wird verworfen.</li>
+      <li><code>eingabeStand</code> — an welchem Bearbeitungsstand. „Gespeichert“ darf nur melden, wer <em>diesen</em> Stand geschrieben hat.</li>
+    </ul>
+  </div>
+  <div class="karte">
+    <h3 style="margin-top:0">Ein Vorgang, der den Bestand austauscht, sperrt die Eingaben</h3>
+    <p style="margin-bottom:0">Abwarten genügt nicht: Während einer Wiederherstellung blieb die alte Tabelle bearbeitbar, und ein Tastendruck erzeugte einen Auftrag, der sich brav dahinter einreihte — und sie damit rückgängig machte. Gesperrt wird vor dem ersten <code>await</code>, gezählt, und sowohl im DOM als auch im Eingabe-Handler geprüft.</p>
+  </div>
+  <div class="karte">
+    <h3 style="margin-top:0">Zurückspielen ist ein Abgleich, kein Überschreiben</h3>
+    <p style="margin-bottom:0">Buchungen, die erst nach dem Schnappschuss dazukamen, werden ausdrücklich entfernt — sonst ließe sich ein fehlerhafter Import zusätzlicher Zeilen nicht rückgängig machen. Löschen und Zurückschreiben laufen als <strong>eine</strong> Transaktion.</p>
+  </div>
+  <div class="merk warn">
+    <p style="margin-bottom:0"><strong>Grenzen:</strong> höchstens 400 geänderte Buchungen je Vorgang, höchstens 700&nbsp;kB JSON je Verwaltungs- oder Protokolldokument. Größere Vorgänge werden vollständig abgewiesen — kein Teilwrite. Unveränderte Zeilen zählen nicht mit.</p>
+  </div>
+</section>
+
+<section id="rollout">
+  <h2><span class="nr">09</span> Datenbank und Rollout</h2>
+  <p class="prosa">Der Bestand liegt in Firestore, je Benutzer und Objekt getrennt:</p>
+  <div class="karte">
+    <pre class="baum">users/{uid}/einstellungen/aktuell
+users/{uid}/objekte/{objektId}
+  <span class="k">├─</span> buchungen/{code}            <span class="k">die Buchung selbst</span>
+  <span class="k">├─</span> verwaltung/aktuell          <span class="k">Revision + Monatssperren</span>
+  <span class="k">├─</span> verlauf/{id}                <span class="k">Änderungsprotokoll, unveränderlich</span>
+  <span class="k">├─</span> abschlusshistorie/{id}      <span class="k">eingefrorene Belege, unveränderlich</span>
+  <span class="k">└─</span> schnappschuesse/{zeitpunkt} <span class="k">Stand vor jedem Import</span></pre>
+  </div>
+  <div class="prosa">
+    <p style="margin-top:16px">Datumsangaben stehen als ISO-Zeichenkette, <strong>nicht</strong> als Firestore-Timestamp: Die Rechnung arbeitet auf UTC-Kalendertagen, und ein Timestamp holt genau die Zeitzonenfehler zurück, die vermieden werden sollen.</p>
+    <p>Buchungen, Verlauf, Einstellungen und Objektrevision werden <strong>gemeinsam in einer Transaktion</strong> geschrieben. Die Zugriffsregeln verlangen dafür, dass die Objektrevision im selben Vorgang um genau eins steigt — dadurch kann ein veralteter Client nicht über einen fremden Stand schreiben.</p>
+  </div>
+  <div class="merk">
+    <p><strong>Ein Merge rollt die Regeln nicht aus.</strong> GitHub Pages liefert nur <code>index.html</code> und <code>js/</code>; <code>firestore.rules</code> lebt im Firebase-Projekt. Wer die Regeln ändert, ohne sie auszurollen, erzeugt „neue Anwendung, alte Regeln“ — und das meldet sich als <em>Missing or insufficient permissions</em>, schon beim Laden.</p>
+    <p style="margin-bottom:0">Dafür gibt es <code>.github/workflows/firestore-regeln.yml</code>: Es prüft die Regeln erst gegen den Firestore-Emulator und rollt nur bei bestandener Prüfung aus. Auslösbar auch von Hand über <strong>Actions → Firestore-Regeln → Run workflow</strong>. Nach jedem Ausrollen offene Tabs neu laden.</p>
+  </div>
+</section>
+
+<section id="tests">
+  <h2><span class="nr">10</span> Was geprüft wird</h2>
+  <p class="prosa">Vier Ebenen, weil keine allein reicht. Der Selbsttest prüft den Rechenkern — was zwischen Eingabe, Import und Speichern passiert, erreicht er nicht, und genau dort lagen die schwersten Fehler.</p>
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>Ebene</th><th class="num">Fälle</th><th>Prüft</th></tr></thead>
+      <tbody>
+        <tr><td class="datei">selftest.js</td><td class="num">377</td><td>Den Rechenkern: Schlüsselzahlen, Stichtage, Parser, Befreiungen, den Rundlauf CSV → rechnen → Dokumente → zurück → rechnen.</td></tr>
+        <tr><td class="datei">daten-transaktionen.mjs</td><td class="num">27</td><td>Den echten Datenzugriff mit SDK-Attrappe: Commitfehler, konkurrierende Revisionen, Sperren, Protokollaufteilung.</td></tr>
+        <tr><td class="datei">integration.mjs</td><td class="num">83</td><td>Die echte Oberfläche in Chromium gegen eine Datenbank-Attrappe. Tippen, importieren, Objekt wechseln, abschließen.</td></tr>
+        <tr><td class="datei">firestore-regeln.mjs</td><td class="num">17</td><td>Die Zugriffsregeln gegen den lokalen Emulator: Eigentümerzugriff, Revisionsprüfung, fremde Zugriffe, unveränderliche Protokolle.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="merk">
+    <p style="margin-bottom:0">Der Grundsatz dahinter: <strong>Ein Test, der seine Eingabe selbst konstruiert statt sie durch den echten Pfad laufen zu lassen, ist grün und wertlos.</strong> Genau so war <code>gastbetragQuelle</code> einmal nur in den Tests vorhanden, während der Produktivpfad den Wert nie erzeugte.</p>
+  </div>
+</section>
+
+<section id="grenzen">
+  <h2><span class="nr">11</span> Grenzen</h2>
+  <ul class="liste prosa">
+    <li><strong>Ohne Gewähr.</strong> Das Werkzeug rechnet nach den geprüften Schlüsselzahlen der Stadt Wien, ersetzt aber keine Steuerberatung. Welchen Wert ein konkretes Formularfeld verlangt, ist am Feld selbst zu prüfen.</li>
+    <li><strong>Ein Abschluss ist keine Meldung.</strong> Er dokumentiert deinen Prüfstand, nicht die Abgabe bei VIETour.</li>
+    <li><strong>Die Monatssperre schützt vor Versehen, nicht vor dir.</strong> Als Eigentümer kannst du über eigene Clients oder die Firebase-Administration weiterhin alles ändern. Sie ist eine Anwendungsschutzfunktion, keine Berechtigungsgrenze.</li>
+    <li><strong>Schreiben braucht Netz.</strong> Geschützte Schreibvorgänge verlangen eine Online-Transaktion — sonst könnte ein später synchronisierter Offline-Write an einer inzwischen gesetzten Monatssperre vorbeilaufen. Das Rechnen aus der CSV funktioniert offline weiter; gespeicherte Buchungen erscheinen dann als schreibgeschützter, möglicherweise veralteter Offline-Stand.</li>
+    <li><strong>Der Verlauf beginnt mit seiner Einführung.</strong> Es ist keine zertifizierte revisionssichere Archivierung.</li>
+    <li><strong>Das PDF nutzt WinAnsi.</strong> Nicht darstellbare Zeichen erscheinen dort als <code>?</code> — die Unicode-Originale bleiben in CSV und JSON des Pakets erhalten.</li>
+  </ul>
+  <p class="prosa">Die rechtlichen Grundlagen im Detail — Gesetzesstellen, FAQ der MA 6, Judikatur zur 30-Nächte-Grenze — stehen im Werkzeug selbst unter <a href="./#">„Wie gerechnet wird“</a>.</p>
+</section>
+
+<footer>
+  Ortstaxe Wien · <a href="./">manuel.tools/ortstaxe-wien/</a> · Quellcode und Testbefehle im Repository <span class="mono">ieeks/ortstaxe-wien</span>
+</footer>
+
+</div>
+</body>
+</html>
