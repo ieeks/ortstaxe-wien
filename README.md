@@ -7,13 +7,26 @@ von Buchungen über den Monatswechsel und dem 90-Tage-Zähler der Bauordnung.
 **→ https://manuel.tools/ortstaxe-wien/**
 
 Kein Build-Schritt, keine Bundler, kein Framework — native ES-Module, so
-ausgeliefert wie sie im Repo liegen. Die CSV wird ausschließlich im Browser
-verarbeitet und nirgendwo hochgeladen.
+ausgeliefert wie sie im Repo liegen.
 
-    index.html            Markup und CSS
-    js/kern.js            Rechenkern — reine Funktionen, kein DOM
-    js/oberflaeche.js     alles mit document
-    selftest.js           die Prüfungen, nur bei ?selftest geladen
+**Ohne Anmeldung verlässt nichts den Browser.** Die CSV wird dort verarbeitet und
+nirgendwo hochgeladen. Wer sich anmeldet, speichert seine Buchungen bewusst in
+Firestore — dann liegen Gastnamen, Zeiträume und Beträge dort; siehe
+[Speicherung und Rollout](#speicherung-und-rollout).
+
+    index.html              Markup und CSS, lädt js/oberflaeche.js als Modul
+    bauplan.html            Doku: Aufbau, Rechenweg, welche Datei was macht
+    js/kern.js              Rechenkern — reine Funktionen, kein DOM
+    js/oberflaeche.js       alles mit document: render, Handler, Sitzungszustand
+    js/daten.js             Firestore, spricht als einzige Stelle mit Firebase
+    js/abschluss.js         Monatsprüfung und Sperrvergleich, reine Funktionen
+    js/belegpaket.js        ZIP und PDF für das Belegpaket, ohne Abhängigkeit
+    js/firebase-config.js   Projektdaten und gepinnte SDK-Version
+    selftest.js             die Prüfungen, nur bei ?selftest geladen
+
+Wie das alles zusammenspielt, steht ausführlich im
+**[Bauplan](https://manuel.tools/ortstaxe-wien/bauplan.html)** — auch im Werkzeug
+selbst unter „Wie gerechnet wird“ verlinkt.
 
 ## Benutzung
 

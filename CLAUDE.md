@@ -77,12 +77,19 @@ vorhanden, während der Produktivpfad den Wert nie erzeugte.
 ## Aufbau
 
     index.html              Markup und CSS, lädt js/oberflaeche.js als Modul
+    bauplan.html            Doku der Anwendung; im Werkzeug verlinkt
     js/kern.js              Rechenkern — reine Funktionen, kein DOM
     js/oberflaeche.js       alles mit document: render, Handler, Sitzungszustand
     js/daten.js             Firestore, spricht als einzige Stelle mit Firebase
+    js/abschluss.js         Monatsprüfung und Sperrvergleich, reine Funktionen
+    js/belegpaket.js        ZIP und PDF für das Belegpaket, ohne Abhängigkeit
     js/firebase-config.js   Projektdaten und gepinnte SDK-Version
     selftest.js             Prüfungen des Rechenkerns, per ?selftest nachgeladen
     test/integration.mjs    Oberfläche gegen eine Datenbank-Attrappe
+
+`bauplan.html` beschreibt den Aufbau für Menschen und ist über GitHub Pages
+erreichbar. Wer hier etwas Strukturelles ändert — eine Datei dazu, ein
+Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
 
 `js/kern.js`:
 
