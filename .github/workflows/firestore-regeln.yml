@@ -1,4 +1,4 @@
-# Rollt firestore.rules und firestore.indexes.json aus.
+# Rollt firestore.rules aus.
 #
 # Warum es das gibt: Ein Merge rollt über GitHub Pages nur die Anwendung aus.
 # Die Regeln liegen im Firebase-Projekt und wurden bisher von Hand deployt —
@@ -7,7 +7,10 @@
 #
 # Einmalig einzurichten (siehe README, Abschnitt „Regeln ausrollen“):
 #   Repository-Secret FIREBASE_SERVICE_ACCOUNT mit dem JSON-Schlüssel eines
-#   Dienstkontos, das die Rolle „Firebase Rules Admin“ hat.
+#   Dienstkontos, das ZWEI Rollen hat: „Firebase Rules Admin“ zum Schreiben der
+#   Regeln und „Service Usage Consumer“ für die Prüfung, die firebase deploy
+#   vorher gegen die Service-Usage-API fährt. Ohne die zweite bricht es mit
+#   „403, Permission denied to get service“ ab, bevor es etwas schreibt.
 #
 # Ohne dieses Secret bricht nur der Deploy-Schritt ab, mit einer klaren Meldung.
 # Die Prüfung gegen den Emulator läuft auch ohne jede Anmeldung.
@@ -20,14 +23,12 @@ on:
     branches: [main]
     paths:
       - firestore.rules
-      - firestore.indexes.json
       - firebase.json
       - test/firestore-regeln.mjs
       - .github/workflows/firestore-regeln.yml
   pull_request:
     paths:
       - firestore.rules
-      - firestore.indexes.json
       - firebase.json
       - test/firestore-regeln.mjs
       - .github/workflows/firestore-regeln.yml
@@ -123,10 +124,14 @@ jobs:
           chmod 600 "$RUNNER_TEMP/firebase-schluessel.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-schluessel.json" >> "$GITHUB_ENV"
 
+      # Nur die Regeln. firestore.indexes.json ist leer; mitauszurollen verlangte
+      # zusätzlich roles/datastore.indexAdmin, ohne dass es etwas zu tun gäbe —
+      # und der Lauf bräche daran ab, statt die Regeln auszurollen. Kommt je ein
+      # Index dazu, gehören firestore:indexes und die Rolle gemeinsam zurück.
       - name: Ausrollen
         run: >
           npx --yes firebase-tools@${{ env.FIREBASE_TOOLS }} deploy
-          --only firestore:rules,firestore:indexes
+          --only firestore:rules
           --project ortstaxe-wien
           --non-interactive
 

@@ -223,12 +223,29 @@ aus der GitHub-App am Telefon.
 Einmalige Einrichtung am Rechner:
 
 1. In der Google Cloud Console des Projekts `ortstaxe-wien` ein Dienstkonto anlegen
-   und ihm die Rolle **Firebase Rules Admin** (`roles/firebaserules.admin`) geben.
+   und ihm **zwei** Rollen geben:
+   - **Firebase Rules Admin** (`roles/firebaserules.admin`) — schreibt die Regeln.
+   - **Service Usage Consumer** (`roles/serviceusage.serviceUsageConsumer`) — ohne
+     sie scheitert der Deploy noch vor dem Schreiben. `firebase deploy` prüft
+     vorab über die Service-Usage-API, ob `firestore.googleapis.com` aktiviert
+     ist, und quittiert das sonst mit `HTTP Error: 403, Permission denied to get
+     service`. Die erste Rolle deckt diese Prüfung nicht ab.
+
    Mehr Rechte braucht der Workflow nicht; er schreibt keine Daten und liest keine
    Buchungen.
 2. Für dieses Dienstkonto einen JSON-Schlüssel erzeugen.
-3. Den vollständigen JSON-Inhalt als Repository-Secret **`FIREBASE_SERVICE_ACCOUNT`**
-   hinterlegen (Settings → Secrets and variables → Actions).
+3. Den **vollständigen** JSON-Inhalt als Repository-Secret **`FIREBASE_SERVICE_ACCOUNT`**
+   hinterlegen (Settings → Secrets and variables → Actions) — die ganze Datei von
+   `{` bis `}`, kein einzelnes Feld daraus. Der Workflow schreibt den Inhalt
+   unverändert in eine Datei, auf die `GOOGLE_APPLICATION_CREDENTIALS` zeigt; die
+   Google-Bibliothek braucht daraus mehrere Felder zusammen. Die `\n` im
+   `private_key` bleiben als Zeichenfolge stehen — echte Zeilenumbrüche machen
+   das JSON ungültig.
+
+Der Workflow rollt **nur die Regeln** aus. `firestore.indexes.json` ist leer;
+mitauszurollen verlangte zusätzlich `roles/datastore.indexAdmin`, ohne dass es
+etwas zu tun gäbe. Kommt je ein Index dazu, gehören `firestore:indexes` im
+Deploy-Schritt und diese Rolle gemeinsam zurück.
 
 Fehlt das Secret, bricht nur der Deploy-Schritt ab und sagt das ausdrücklich; die
 Emulatorprüfung läuft ohne jede Anmeldung. Solange das Secret nicht existiert, bleibt
