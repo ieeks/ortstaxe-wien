@@ -1,62 +1,21 @@
 # TODO
 
-Grob nach Priorität. Die ersten drei Punkte hängen zusammen und ergeben zusammen
-den laufenden Jahresüberblick.
+Grob nach Priorität. Die Issues im Repo sind die ausführliche Fassung.
 
-## Mehrere CSVs kombinieren
+## Mehrere CSVs kombinieren — nur ohne Anmeldung
 
 → [Issue #3](https://github.com/ieeks/ortstaxe-wien/issues/3)
 
-Ein neuer Upload ersetzt heute den alten Bestand. Wer im August den Juli lädt und
-im September den August, sieht immer nur einen Monat. Für die Monatsmeldung egal,
-für den 90-Tage-Zähler aber ein Korrektheitsproblem: der Zähler unterschätzt den
-Verbrauch systematisch, weil er nur über die gerade geladenen Buchungen rechnet.
+Angemeldet ist der Punkt erledigt: der gespeicherte Bestand ist die Quelle, und
+jeder Import führt zusammen statt zu ersetzen. Ohne Anmeldung ersetzt eine neue
+Datei weiterhin den Bestand — für die Monatsmeldung egal, für den 90-Tage-Zähler
+zu günstig gerechnet.
 
-Kleinste Lösung: `multiple` am File-Input, Dateien additiv statt ersetzend,
-Deduplizierung über den Bestätigungs-Code. Vorher prüfen, ob Airbnb den ganzen
-Jahreszeitraum in einer Datei exportiert — dann erledigt sich das meiste.
-
-## Jahresstand: freie Tage und aufgelaufene Ortstaxe
-
-Das eigentliche Ziel. Ganz oben eine kompakte Übersicht für das laufende Jahr:
-
-- **Noch frei zum Vermieten** — wie viele der 90 Tage sind übrig, plus Graubereich
-  und Worst Case. Steckt fachlich schon in `occupancy()`, braucht nur den
-  vollständigen Jahresbestand und eine prominentere Platzierung.
-- **Ortstaxe bisher im Jahr** — Summe der Abgabe seit 01.01., aufgeschlüsselt nach
-  Meldemonat, mit Kennzeichnung, was davon schon gemeldet und gezahlt ist.
-- **Bemessungsgrundlage kumuliert** — für die Jahreserklärung, fällig am 15.02. des
-  Folgejahres, abgestimmt auf die monatlich gemeldeten Beträge.
-- Beim Satzwechsel getrennt ausweisen, sonst wird die Jahressumme unlesbar.
-
-Setzt voraus, dass die Daten des ganzen Jahres da sind — also entweder den
-Jahresexport oder den Punkt darüber oder den darunter.
-
-## Persistenz — Firestore oder Sammelstand-Datei
-
-Damit der Jahresstand ohne jedes Mal neues Zusammensuchen dasteht. Zwei Wege:
-
-**Firestore** (ist vorhanden, wird schon bei Wallbox eingesetzt). Sync über Geräte
-hinweg, am iPhone einfach aufrufen und der Stand ist da. Drei Dinge vorher klären:
-
-- Es sollten **nur Aggregate** hochgehen — pro Jahr und Meldemonat die Nächte, die
-  Bemessungsgrundlage und die Abgabe. Für alles, was oben gefragt ist, reicht das
-  vollständig. Buchungsdetails und vor allem **Gästenamen haben in der Cloud nichts
-  verloren**, das sind personenbezogene Daten Dritter.
-- Der Hinweis im Drop-Feld sagt heute *„Die Datei bleibt im Browser."* — sobald
-  irgendetwas synchronisiert wird, muss der Satz geändert werden, sonst stimmt er
-  nicht mehr.
-- `CLAUDE.md` schließt `localStorage` aus. Firestore ist etwas anderes, aber die
-  Regel gehört bei der Gelegenheit präzisiert: gemeint ist wohl „kein stiller
-  lokaler Zustand", nicht „keine Persistenz überhaupt".
-
-**Sammelstand-Datei** als Alternative ohne Backend: Export eines kleinen JSON zum
-Download, liegt in iCloud Drive, wird beim nächsten Mal zusammen mit der neuen
-Monats-CSV wieder eingelesen. Persistenz über die Dateien-App, Daten bleiben zu
-100 % lokal, keine neue Abhängigkeit.
-
-Firestore ist bequemer, die Datei ist sauberer. Bei nur Aggregaten ist Firestore
-vertretbar.
+Zu tun wäre nur noch der Komfort auf dem CSV-Weg: `multiple` am File-Input, alle
+`dataTransfer.files` statt `[0]`, additiv statt ersetzend, Deduplizierung über den
+Bestätigungs-Code, Liste der geladenen Dateien mit ✕ und „Zurücksetzen". Wer den
+Airbnb-Jahresexport zieht — er deckt den ganzen Kalenderjahreszeitraum ab —,
+braucht das nicht.
 
 ## Offline-Fähigkeit
 
