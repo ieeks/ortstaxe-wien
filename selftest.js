@@ -713,6 +713,46 @@ if(location.search.indexOf('selftest')>=0){
   t('Nachprüfung PR 24','bis Fälligkeitstag: eingeschlossen', filtereUeberweisungen(uebN,'','2026-02-15').length, 1);
   t('Nachprüfung PR 24','ab Monat, bis Tag', filtereUeberweisungen(uebN,'2026-09','2026-10-14').map(u=>u.monat).join(','), '2026-08');
 
+  /* Nachprüfung PR 24, zweite Runde. Befund 1: „Vom Gast bezahlt“ als Spalte
+     im Einnahmen-Export geht durch die Übersetzung. */
+  const EING=EIN+',Vom Gast bezahlt';
+  const mitGast=(z,g)=>z+','+g;
+  const JW1=einz('Buchung','HMJW','07/28/2026','09/08/2026',42,'2313.88','86,41','2400.29','','07/29/2026');
+  const JW2=einz('Buchung','HMJW','07/28/2026','09/08/2026',42,'821.05','30,66','851.71','','08/31/2026');
+  const gastSp=compute(parseCSV(EING+'\n'+mitGast(JW1,'3633.26')+'\n'+mitGast(JW2,'')),Object.assign({},BASE,{gastfee:14}));
+  t('Nachprüfung PR 24','Gastbetrag aus der Einnahmen-CSV: exakt wie im Tool',
+    fmt(round2(gastSp.bookings[0].amt))+'|'+gastSp.bookings[0].betragQuelle, fmt(3569.72)+'|beleg');
+  t('Nachprüfung PR 24','Gastbetrag aus der Einnahmen-CSV: Charles 169,99 €',
+    fmt(round2(gastSp.bookings[0].parts.reduce((x,p)=>x+round2(p.tax),0))), '169,99');
+  t('Nachprüfung PR 24','abweichende Gastbeträge je Rate werden genannt',
+    compute(parseCSV(EING+'\n'+mitGast(JW1,'3633.26')+'\n'+mitGast(JW2,'3600.00')),BASE).warn
+      .some(w=>/verschiedenen Werten/.test(w)), true);
+  /* Befund 2: offene Posten (Erstattung) bleiben an der Buchung gespeichert
+     und erreichen die Monatsprüfung. */
+  const ERST=einz('Erstattung','HM4Y','09/16/2026','09/20/2026',4,'-100.00','','-100.00','','09/20/2026');
+  const BU4Y=einz('Buchung','HM4Y','09/16/2026','09/20/2026',4,'542.12','123,88','666.00','','09/17/2026');
+  const mitErst=ein([ERST,BU4Y]);
+  t('Nachprüfung PR 24','Erstattung hängt an der Buchung',
+    JSON.stringify(mitErst.bookings[0].offen), '[{"typ":"Erstattung","datum":"2026-09-20","betrag":-100}]');
+  t('Nachprüfung PR 24','Erstattung wird nicht verrechnet', fmt(mitErst.bookings[0].netPay), '542,12');
+  const erstDok=alsBuchungsdokument(mitErst.bookings[0],'o1');
+  t('Nachprüfung PR 24','Erstattung steht im Dokument', erstDok.offen.length, 1);
+  t('Nachprüfung PR 24','nach dem Laden noch gemeldet',
+    compute(alsCsvZeilen([erstDok]),BASE).warn.some(w=>/offene Posten.*Erstattung -100,00 €/.test(w)), true);
+  t('Nachprüfung PR 24','Monatsprüfung nennt die Erstattung',
+    monatsStand([erstDok],BASE,'2026-09').hinweise.some(h=>/Erstattung/.test(h)), true);
+  t('Nachprüfung PR 24','CSV-Sicherung trägt die Erstattung',
+    compute(parseCSV(baueCsvGastbetraege(mitErst)),BASE).bookings[0].offen.length, 1);
+  const nurErst=ein([ERST]);
+  t('Nachprüfung PR 24','Erstattung ohne Buchung in der Datei wird zurückgegeben',
+    nurErst.offeneOhneBuchung.map(x=>x.code+':'+x.offen.length).join(), 'HM4Y:1');
+  const ohneErstDok=alsBuchungsdokument(ein([BU4Y]).bookings[0],'o1');
+  t('Nachprüfung PR 24','späterer Export ohne Erstattung löscht sie nicht',
+    verschmelzeBuchungen([erstDok],[ohneErstDok]).schreiben[0].offen.length, 1);
+  t('Nachprüfung PR 24','dieselbe Erstattung zweimal zählt einmal',
+    verschmelzeBuchungen([erstDok],[erstDok]).schreiben[0].offen.length, 1);
+  t('Nachprüfung PR 24','Buchung ohne offene Posten bekommt kein Feld', 'offen' in ohneErstDok, false);
+
   /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
   const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',
                  'C;;G;01.10.2026;02.10.2026;;100');

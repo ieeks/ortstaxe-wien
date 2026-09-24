@@ -120,6 +120,12 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   Gastgeber zahlt“ macht „Vom Gast bezahlt“ das exakt (`'beleg'`). Lässt sich
   nichts zuordnen: `'unvollstaendig'`. Gespeichert wird immer der Rohwert, die
   Hochrechnung entsteht bei jeder Rechnung neu
+  Die Spalte „Vom Gast bezahlt“ (`GAST_SPALTEN`) geht durch die Übersetzung.
+  Andere Zeilentypen mit Code (Erstattung, Anpassung, Stornogebühr) werden
+  nicht verrechnet, sondern als `offen` an der Buchung gespeichert; `compute`
+  meldet sie bei jeder Rechnung, also auch nach dem Laden und in der
+  Monatsprüfung (dort nur mit Bestätigung abschließbar). Steht die Buchung
+  nicht in der Datei, hängt `importieren` den Posten an die gespeicherte
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen

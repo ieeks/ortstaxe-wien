@@ -20,6 +20,7 @@ import {
   monatsSummen,
   ueberweisungen,
   filtereUeberweisungen,
+  offenVereinigt,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -687,6 +688,17 @@ async function importieren(ziel, opt, version, dateiname, text){
 
     const gespeichert=await daten.ladeBuchungen(ziel);
     if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    // Offene Posten (Erstattung, Anpassung) zu Buchungen, die nicht in dieser
+    // Datei stehen, aber gespeichert sind: an die gespeicherte Buchung hängen.
+    // Sonst gäbe es den Hinweis nur in dieser Sitzung, und der Monatsabschluss
+    // kennte die ursprüngliche Buchung allein.
+    const neueCodes=new Set(neu.map(d=>d.code)), ohneZiel=[];
+    (res.offeneOhneBuchung||[]).forEach(x=>{
+      if(neueCodes.has(x.code)) return;
+      const a=gespeichert.find(d=>d.code===x.code);
+      if(a) neu.push(Object.assign({},a,{offen:offenVereinigt(a.offen,x.offen)}));
+      else ohneZiel.push(x.code);
+    });
     if(gespeichert.length){
       // Der Schnappschuss gehört mit den Einstellungen gesichert, unter denen
       // dieser Bestand entstanden ist — nicht mit den gerade eingestellten.
@@ -719,6 +731,9 @@ async function importieren(ziel, opt, version, dateiname, text){
     if(stornos) teile.push(stornos+' als storniert vermerkt');
     if(vm.unberuehrt.length) teile.push(vm.unberuehrt.length+' aus früheren Importen unberührt');
     if(ohneCode) teile.push(ohneCode+' ohne Bestätigungs-Code nicht gespeichert');
+    if(ohneZiel.length)
+      teile.push('Achtung: offene Posten zu '+ohneZiel.join(', ')+' — diese Buchung'
+        +(ohneZiel.length===1?' ist':'en sind')+' weder in der Datei noch gespeichert, der Posten konnte nicht zugeordnet werden');
     if(kaputt.length)
       teile.push('Achtung: '+kaputt.length+' Zeile'+(kaputt.length===1?'':'n')
         +' mit unlesbarem Betrag zurückgestellt ('+kaputt.map(b=>b.code).slice(0,5).join(', ')
@@ -1018,8 +1033,11 @@ $('belegpaket').onclick=()=>{
   });
 };
 function beschreibeAenderung(e){
-  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags',brutto:'Bruttoeinkünfte',raten:'Monatsraten'};
-  const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €':String(v);
+  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags',brutto:'Bruttoeinkünfte',raten:'Monatsraten',offen:'Offene Posten'};
+  // Raten und offene Posten sind Listen von Objekten — String() machte daraus
+  // „[object Object]“.
+  const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €'
+    :typeof v==='object'?JSON.stringify(v):String(v);
   return (e.vorher?'':'Neu angelegt\n')+(e.nachher?'':'Gelöscht\n')+Object.entries(namen)
     .filter(([k])=>e.vorher?.[k]!==e.nachher?.[k])
     .map(([k,n])=>n+': '+wert(k,e.vorher?.[k])+' → '+wert(k,e.nachher?.[k])).join('\n');

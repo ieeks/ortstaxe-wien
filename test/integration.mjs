@@ -160,6 +160,15 @@ await seite.waitForTimeout(900);
 const he2 = await db().then(d => d.buchungen[obj].HE2);
 t('Juni- und Juli-Export ergeben beide Raten', [he2.brutto, he2.raten.length, he2.auszahlung], [1644.8, 2, 1585.59]);
 
+console.log('\n„Vom Gast bezahlt“ direkt im Einnahmen-Export');
+const EING = EIN.replace('\n', ',Vom Gast bezahlt\n');
+const rate3 = (datum, betrag, geb, brutto, gast) => rate(datum, betrag, geb, brutto).replace(',HE1,', ',HE3,').replace('\n', ',' + gast + '\n');
+await lade(EING + rate3('06/19/2026', '1534.44', '57,30', '1591.74', '1842.18') + rate3('07/20/2026', '51.15', '1,91', '53.06', ''));
+await seite.waitForTimeout(900);
+const he3 = await db().then(d => d.buchungen[obj].HE3);
+t('Gastbetrag aus der Datei gespeichert', [he3.gastbetrag, he3.gastbetragQuelle], [1842.18, 'datei']);
+t('und exakt gerechnet', await seite.$eval('.paid-in[data-key="HE3"]', n => n.classList.contains('belegt')), true);
+
 console.log('\nFrühere Stände lassen sich zurückspielen');
 await lade(KOPF + 'HM3;Bestätigt;Dora;05.11.2026;06.11.2026;100,00;\n');
 await seite.waitForTimeout(900);
@@ -574,6 +583,23 @@ await seite.evaluate(async()=>{window.__offlineAnzeige=false;await document.getE
 t('Online wieder bearbeitbar',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.disabled),false);
 await seite.evaluate(async()=>{window.__ladeFehler=true;await document.getElementById('objekt').onchange();});
 t('Ladefehler verständlich angezeigt',/Laden fehlgeschlagen/.test(await seite.textContent('#wolkeStand')),true);
+console.log('\nOffene Posten aus dem Einnahmen-Export bleiben erhalten');
+await seite.evaluate(async()=>{window.__ladeFehler=false;window.__offlineAnzeige=false;await document.getElementById('objekt').onchange();});
+await seite.waitForTimeout(500);
+const EINK='Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,Buchungsdatum,Startdatum,Enddatum,'
+  +'Nächte,Gast,Inserat,Details,Referenzcode,Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
+  +'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr\n';
+await lade(EINK+'09/11/2026,,Buchung,OP1,09/01/2026,09/10/2026,09/14/2026,4,Otto,"Studio",,,EUR,542.12,,"123,88",,46.00,666.00,0.00,2026\n');
+await seite.waitForTimeout(900);
+// Ein späterer Export, der die Buchung selbst nicht mehr enthält, nur die Erstattung.
+await lade(EINK+'10/02/2026,,Erstattung,OP1,,09/10/2026,09/14/2026,4,Otto,"Studio",,,EUR,-100.00,,,,,-100.00,0.00,2026\n');
+await seite.waitForTimeout(900);
+t('Erstattung an der gespeicherten Buchung',((await db()).buchungen[mo].OP1.offen||[]).map(o=>o.typ+' '+o.betrag),['Erstattung -100']);
+await seite.evaluate(async()=>{await document.getElementById('objekt').onchange();});
+await seite.waitForTimeout(600);
+t('nach erneutem Laden noch gemeldet',/OP1 \(Otto\) — offene Posten/.test(await seite.textContent('#warnings')),true);
+await seite.selectOption('#abschlussMonat','2026-09');
+t('Monatsprüfung nennt die Erstattung',/Erstattung/.test(await seite.textContent('#abschlussWarnungen')),true);
 if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;
