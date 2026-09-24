@@ -231,6 +231,28 @@ function erwarteteRaten(a,b){
   return k;
 }
 
+/* Wie viele Nächte die vorhandenen Raten abdecken. Welche Rate eine Zahlung
+   ist, sagt ihr Auszahlungsdatum: Airbnb zahlt kurz nach Beginn des jeweiligen
+   Ratenmonats aus. Im Export vom 24.09.2026 rechnen sich 3 von 4 Aufenthalten
+   aus jeder einzelnen Rate auf den Cent hoch; einer mit Anreise am 30.01.
+   weicht um 4–5 % ab (Monatsende im Februar). null heißt: nicht zuordenbar —
+   Datum fehlt, liegt vor der Anreise, oder zwei Zahlungen fallen auf dieselbe
+   Rate. */
+function gedeckteNaechte(a,b,daten){
+  const soll=erwarteteRaten(a,b), belegt=new Set();
+  for(const d of daten){
+    const t=parseDate(d);
+    if(isNaN(t)) return null;
+    let i=-1;
+    for(let k=0;k<soll;k++) if(plusMonths(a,k)<=t) i=k;
+    if(i<0 || belegt.has(i)) return null;
+    belegt.add(i);
+  }
+  let n=0;
+  belegt.forEach(i=>{ n+=Math.round((Math.min(plusMonths(a,i+1),b)-plusMonths(a,i))/86400000); });
+  return n;
+}
+
 const BRUTTO_SPALTE='Bruttoeinkünfte Gastgeber', RATEN_SPALTE='Monatsraten';
 
 function ausEinnahmenExport(rows){
@@ -286,7 +308,7 @@ function ausEinnahmenExport(rows){
     if(!g){
       g={code, start:zelle(row,c.start), end:zelle(row,c.end), nights:zelle(row,c.nights),
          name:zelle(row,c.name), listing:zelle(row,c.listing),
-         betrag:0, brutto:0, steuer:0, raten:0, roh:[], unlesbar:false, ohneBrutto:false};
+         betrag:0, brutto:0, steuer:0, daten:[], roh:[], unlesbar:false, ohneBrutto:false};
       gruppen.set(schluessel,g);
       if(!code) einzeln.push(schluessel);
     }else if(g.start!==zelle(row,c.start) || g.end!==zelle(row,c.end)){
@@ -294,7 +316,10 @@ function ausEinnahmenExport(rows){
         +g.start+'–'+g.end+' / '+zelle(row,c.start)+'–'+zelle(row,c.end)+'). Gerechnet wird mit dem '
         +'ersten; die Buchung wurde vermutlich geändert und gehört geprüft.');
     }
-    g.raten++;
+    // Das Auszahlungsdatum je Rate — daran erkennt compute(), welche Rate
+    // vorliegt, wenn eine fehlt.
+    const dt=parseDate(zelle(row,c.datum),dOrd.ordnung);
+    g.daten.push(isNaN(dt)?'?':isoTag(dt));
     g.roh.push(zelle(row,c.betrag));
     if(betrag.status==='ungueltig') g.unlesbar=true;
     else if(betrag.status==='mehrdeutig')
@@ -314,7 +339,7 @@ function ausEinnahmenExport(rows){
     // damit compute() die Zeile als unlesbar meldet und sie nicht speichert.
     const einkuenfte = g.unlesbar ? g.roh.join(' + ') : fmt(g.betrag);
     zeilen.push([g.code,'Bestätigt',g.name,iso(g.start),iso(g.end),g.nights,einkuenfte,
-                 g.ohneBrutto||!(g.brutto>0) ? '' : fmt(g.brutto), String(g.raten)]);
+                 g.ohneBrutto||!(g.brutto>0) ? '' : fmt(g.brutto), g.daten.join(' ')]);
     if(g.steuer>0.005)
       hinweise.push((g.code||'Zeile ohne Code')+' ('+g.name+') — laut Export hat Airbnb '+fmt(g.steuer)
         +' € Steuer abgeführt („Von Airbnb abgeführte Steuer“). Das Werkzeug rechnet die Ortstaxe '
@@ -546,14 +571,43 @@ function compute(csvRows, opt){
     // Monatsraten aus dem Einnahmen-Export: fehlt eine, ist der Betrag nur ein
     // Teil des Entgelts und wird trotzdem über alle Nächte verteilt — jeder
     // Monat des Aufenthalts fiele zu niedrig aus. Das darf nicht still passieren.
-    const raten = ci.raten>=0 ? (parseInt(row[ci.raten],10)||0) : 0;
+    // Die Zelle trägt je Rate ihr Auszahlungsdatum ('?' wenn unbekannt).
+    const ratenDaten = ci.raten>=0 ? String(row[ci.raten]||'').trim().split(/\s+/).filter(Boolean) : [];
+    const raten = ratenDaten.length;
     const ratenSoll = raten ? erwarteteRaten(a,b) : 0;
     if(raten && raten<ratenSoll){
-      warn.push(code+' ('+name+') — nur '+raten+' von '+ratenSoll+' Monatsraten in der Datei. '
-        +'Der Betrag ist unvollständig, die Ortstaxe dieses Aufenthalts in jedem Monat zu niedrig. '
+      const fehlt=code+' ('+name+') — nur '+raten+' von '+ratenSoll+' Monatsraten in der Datei. '
         +'Fehlt eine spätere Rate, ist sie noch nicht ausgezahlt; fehlt eine frühere, liegt sie vor '
-        +'dem Exportzeitraum. Für die Meldung einen Export ziehen, der alle Raten enthält.');
-      betragQuelle='unvollstaendig';
+        +'dem Exportzeitraum. ';
+      const gedeckt = gedeckteNaechte(a,b,ratenDaten);
+      if(gedeckt>0 && gedeckt<nights){
+        // Hochrechnen: die vorhandenen Raten decken `gedeckt` Nächte, der
+        // Preis je Nacht gilt für den ganzen Aufenthalt. Gespeichert bleibt
+        // der Rohwert — hochgerechnet wird bei jeder Rechnung neu.
+        const basisH = basis*nights/gedeckt;
+        if(nurGastgeber && paid>0 && paid+0.005>=basis){
+          // „Nur Gastgeber zahlt“: was der Gast zahlt, ist das Bruttoentgelt.
+          // Mit dem Betrag aus der App ist der Aufenthalt also exakt bekannt.
+          amt=paid; betragQuelle='beleg';
+          warn.push(fehlt+'Gerechnet wird exakt mit dem eingetragenen Betrag „Vom Gast bezahlt“ ('
+            +fmt(paid)+' €) — im Modell „nur Gastgeber zahlt“ ist das das ganze Entgelt.');
+        }else{
+          if(nurGastgeber) amt=basisH;
+          else if(paid>0 && paid+0.005>=basisH) amt=basisH+(paid-basisH)/USTF_SERVICE;
+          else amt=basisH*guestF;
+          betragQuelle='hochgerechnet';
+          warn.push(fehlt+'Hochgerechnet aus '+gedeckt+' von '+nights+' Nächten auf '+fmt(amt)
+            +' € — eine Schätzung, die bei gleichbleibendem Nachtpreis meist auf den Cent stimmt. '
+            +(nurGastgeber
+              ? 'Exakt wird es, wenn du den Betrag „Vom Gast bezahlt“ aus der App einträgst.'
+              : 'Genauer wird es mit dem Betrag „Vom Gast bezahlt“ aus der App; exakt mit einem Export, der alle Raten enthält.'));
+        }
+      }else{
+        warn.push(fehlt+'Welche Rate vorliegt, lässt sich nicht bestimmen — der Betrag ist unvollständig, '
+          +'die Ortstaxe dieses Aufenthalts in jedem Monat zu niedrig. Für die Meldung einen Export '
+          +'ziehen, der alle Raten enthält.');
+        betragQuelle='unvollstaendig';
+      }
     }else if(raten>ratenSoll)
       warn.push(code+' ('+name+') — '+raten+' Zahlungen, erwartet waren '+ratenSoll
         +'. Alle wurden zusammengezählt; bitte gegen die Airbnb-Abrechnung prüfen.');
@@ -585,7 +639,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,gastbetragStatus,netPay,brutto,raten,ratenSoll,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,gastbetragStatus,netPay,brutto,raten,ratenDaten,ratenSoll,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
@@ -808,7 +862,7 @@ function alsBuchungsdokument(b, objektId){
   // jedes älteren Dokuments, und der Sperrvergleich meldete in abgeschlossenen
   // Monaten Änderungen, die es nicht gibt.
   if(b.brutto>0) d.brutto=b.brutto;
-  if(b.raten>0) d.raten=b.raten;
+  if(b.ratenDaten && b.ratenDaten.length) d.raten=b.ratenDaten.slice();
   return d;
 }
 
@@ -823,7 +877,7 @@ function alsCsvZeilen(dokumente){
     .map(d=>[d.code, d.status||'', d.name||'', d.von, d.bis, '',
              fmt(Number(d.auszahlung)||0),
              d.gastbetrag==null ? '' : fmt(Number(d.gastbetrag)),
-             d.brutto>0 ? fmt(Number(d.brutto)) : '', d.raten>0 ? String(d.raten) : '']);
+             d.brutto>0 ? fmt(Number(d.brutto)) : '', Array.isArray(d.raten) ? d.raten.join(' ') : '']);
   return [kopf].concat(zeilen);
 }
 
@@ -884,10 +938,11 @@ function verschmelzeBuchungen(gespeichert, neu){
     // Ein Export, der eine Rate weniger enthält als der gespeicherte Stand
     // (Exportzeitraum beginnt mitten im Aufenthalt), darf den vollständigen
     // Betrag nicht durch einen Teilbetrag ersetzen.
-    if(a.raten>0 && n.raten>0 && n.raten<a.raten && a.von===n.von && a.bis===n.bis){
-      d.auszahlung=a.auszahlung; d.raten=a.raten;
+    const anzahl=x=>Array.isArray(x.raten)?x.raten.length:0;
+    if(anzahl(a) && anzahl(n) && anzahl(n)<anzahl(a) && a.von===n.von && a.bis===n.bis){
+      d.auszahlung=a.auszahlung; d.raten=a.raten.slice();
       if(a.brutto!=null) d.brutto=a.brutto; else delete d.brutto;
-      behalten.push({code:n.code, raten:n.raten, gespeichert:a.raten});
+      behalten.push({code:n.code, raten:anzahl(n), gespeichert:anzahl(a)});
     }
     if(n.gastbetrag==null && a.gastbetrag!=null){
       // Der Import weiß nichts über den Gastbetrag — Gespeichertes behalten
@@ -942,6 +997,7 @@ export {
   istEinnahmenExport,
   ausEinnahmenExport,
   erwarteteRaten,
+  gedeckteNaechte,
   csvDatum,
   baueCsvMonate,
   baueCsvBuchungen,

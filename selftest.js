@@ -26,6 +26,7 @@ import {
   filtereUeberweisungen,
   istEinnahmenExport,
   erwarteteRaten,
+  gedeckteNaechte,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -578,13 +579,13 @@ if(location.search.indexOf('selftest')>=0){
   /* Einnahmen-Export zusammenfassen. Aufbau und Zahlen wie im echten Export
      vom 24.09.2026 (Namen ersetzt): Komma getrennt, MM/TT/JJJJ, Beträge mit
      Punkt, die Servicegebühr aber mit Komma in Anführungszeichen. */
-  const einz=(typ,code,von,bis,n,betrag,geb,brutto,steuer)=>
-    '09/01/2026,,'+typ+','+code+',01/01/2026,'+von+','+bis+','+n+',Gast '+code+',"Studio",,,EUR,'
+  const einz=(typ,code,von,bis,n,betrag,geb,brutto,steuer,datum)=>
+    (datum||'09/17/2026')+',,'+typ+','+code+',01/01/2026,'+von+','+bis+','+n+',Gast '+code+',"Studio",,,EUR,'
     +betrag+',,"'+geb+'",,0.00,'+brutto+','+(steuer||'0.00')+',2026';
   const auszahlung='07/20/2026,07/28/2026,Payout,,,,,,,,"Zahlen an X",G-1,EUR,,51.15,,,,,,';
   const ein=(zeilen,opt)=>compute(parseCSV(EIN+'\n'+zeilen.join('\n')),opt||BASE);
-  const RATE1=einz('Buchung','HM35','06/18/2026','07/19/2026',31,'1534.44','57,30','1591.74');
-  const RATE2=einz('Buchung','HM35','06/18/2026','07/19/2026',31,'51.15','1,91','53.06');
+  const RATE1=einz('Buchung','HM35','06/18/2026','07/19/2026',31,'1534.44','57,30','1591.74','','06/19/2026');
+  const RATE2=einz('Buchung','HM35','06/18/2026','07/19/2026',31,'51.15','1,91','53.06','','07/20/2026');
   const einReg=ein([auszahlung,RATE2,RATE1]);
   t('Einnahmen-Export','Raten und Auszahlungen ergeben eine Buchung', einReg.bookings.length, 1);
   t('Einnahmen-Export','Auszahlung = Summe der Raten', fmt(einReg.bookings[0].netPay), fmt(1585.59));
@@ -600,9 +601,39 @@ if(location.search.indexOf('selftest')>=0){
   t('Einnahmen-Export','Modell „nur Gastgeber“: kein Aufschlag', fmt(nurG.bookings[0].amt), '666,00');
   t('Einnahmen-Export','Modell „nur Gastgeber“ gilt als belegt', nurG.bookings[0].betragQuelle, 'beleg');
   t('Einnahmen-Export','Modell „nur Gastgeber“ wird genannt', nurG.warn.some(w=>/nur Gastgeber zahlt/.test(w)), true);
+  /* Fehlende Rate: aus dem Auszahlungsdatum erkennen, welche Rate vorliegt,
+     und auf den ganzen Aufenthalt hochrechnen. */
   const teil=ein([RATE1]);
-  t('Einnahmen-Export','fehlende Rate: als unvollständig markiert', teil.bookings[0].betragQuelle, 'unvollstaendig');
+  t('Einnahmen-Export','fehlende Rate: hochgerechnet', teil.bookings[0].betragQuelle, 'hochgerechnet');
   t('Einnahmen-Export','fehlende Rate wird gemeldet', teil.warn.some(w=>/1 von 2 Monatsraten/.test(w)), true);
+  t('Einnahmen-Export','nur Rate 1: Regressionswerte hochgerechnet',
+    teil.months.map(m=>fmt(round2(m.tax))).join('+'), '19,10+45,48');
+  t('Einnahmen-Export','nur Rate 2 (1 Nacht): Regressionswerte hochgerechnet',
+    ein([RATE2]).months.map(m=>fmt(round2(m.tax))).join('+'), '19,10+45,48');
+  t('Einnahmen-Export','Rohwert bleibt die Teilsumme', fmt(teil.bookings[0].brutto), fmt(1591.74));
+  t('Einnahmen-Export','Rate nicht zuordenbar: unvollständig',
+    ein([einz('Buchung','HM35','06/18/2026','07/19/2026',31,'1534.44','57,30','1591.74','','06/01/2026')]).bookings[0].betragQuelle,
+    'unvollstaendig');
+  t('Einnahmen-Export','zwei Zahlungen auf dieselbe Rate: unvollständig',
+    ein([einz('Buchung','HMJW','07/28/2026','09/08/2026',42,'1000.00','3,60','1036.00','','07/29/2026'),
+         einz('Buchung','HMJW','07/28/2026','09/08/2026',42,'1000.00','3,60','1036.00','','07/30/2026'),
+         einz('Buchung','HMJW','07/28/2026','09/08/2026',42,'1000.00','3,60','1036.00','','07/31/2026')]).bookings[0].raten, 3);
+  /* „Nur Gastgeber zahlt“ + fehlende Rate: der Gastbetrag ist das ganze
+     Entgelt, damit exakt. Rate 1 deckt 31 von 42 Nächten zu 100 € brutto. */
+  const ngTeil=einz('Buchung','HMNG','07/28/2026','09/08/2026',42,'2523.40','576,60','3100.00','','07/29/2026');
+  const ngOpt=Object.assign({},BASE,{gastfee:14});
+  const ngOhne=compute(parseCSV(EIN+'\n'+ngTeil),ngOpt);
+  t('Einnahmen-Export','nur Gastgeber, Rate fehlt: hochgerechnet ohne Aufschlag',
+    fmt(round2(ngOhne.bookings[0].amt))+'|'+ngOhne.bookings[0].betragQuelle, fmt(4200)+'|hochgerechnet');
+  const ngMit=compute(parseCSV(EIN+'\n'+ngTeil),
+                      Object.assign({},ngOpt,{paid:{HMNG:'4250,00'}}));
+  t('Einnahmen-Export','nur Gastgeber, Rate fehlt, Gastbetrag: exakt',
+    fmt(round2(ngMit.bookings[0].amt))+'|'+ngMit.bookings[0].betragQuelle, fmt(4250)+'|beleg');
+  t('Einnahmen-Export','Raten-Nächte: Rate 2 von 18.06.–19.07. ist 1 Nacht',
+    gedeckteNaechte(Date.UTC(2026,5,18),Date.UTC(2026,6,19),['2026-07-20']), 1);
+  t('Einnahmen-Export','Raten-Nächte: Rate 1 von 28.07.–08.09. sind 31 Nächte',
+    gedeckteNaechte(Date.UTC(2026,6,28),Date.UTC(2026,8,8),['2026-07-29']), 31);
+  t('Einnahmen-Export','Raten-Nächte: unbekanntes Datum', gedeckteNaechte(Date.UTC(2026,6,28),Date.UTC(2026,8,8),['?']), null);
   t('Einnahmen-Export','Anpassung wird genannt statt verrechnet',
     (()=>{ const r=ein([einz('Buchung','HM4Y','09/16/2026','09/20/2026',4,'542.12','123,88','666.00'),
                         einz('Anpassung','HM4Y','09/16/2026','09/20/2026',4,'-50.00','0,00','-50.00')]);
@@ -627,22 +658,24 @@ if(location.search.indexOf('selftest')>=0){
 
   /* Rundlauf: Bruttoeinkünfte und Raten überleben Speichern und Laden. */
   const einDok=alsBuchungsdokument(einReg.bookings[0],'o1');
-  t('Einnahmen-Export','Dokument trägt Bruttoeinkünfte und Raten', einDok.brutto+'|'+einDok.raten, '1644.8|2');
+  t('Einnahmen-Export','Dokument trägt Bruttoeinkünfte und Auszahlungsdaten',
+    einDok.brutto+'|'+einDok.raten.slice().sort().join(','), '1644.8|2026-06-19,2026-07-20');
   const einZur=compute(alsCsvZeilen([einDok]),BASE);
   t('Einnahmen-Export','Rundlauf: gleiche Ortstaxe',
     einZur.months.map(m=>fmt(round2(m.tax))).join('+'), '19,10+45,48');
   const nurGZur=compute(alsCsvZeilen([alsBuchungsdokument(nurG.bookings[0],'o1')]),Object.assign({},BASE,{fee:3.6,gastfee:14}));
   t('Einnahmen-Export','Rundlauf: Modell „nur Gastgeber“ bleibt erhalten', fmt(nurGZur.bookings[0].amt), '666,00');
-  t('Einnahmen-Export','Rundlauf: unvollständig bleibt markiert',
-    compute(alsCsvZeilen([alsBuchungsdokument(teil.bookings[0],'o1')]),BASE).bookings[0].betragQuelle, 'unvollstaendig');
+  const teilZur=compute(alsCsvZeilen([alsBuchungsdokument(teil.bookings[0],'o1')]),BASE);
+  t('Einnahmen-Export','Rundlauf: Hochrechnung bleibt erhalten',
+    teilZur.bookings[0].betragQuelle+'|'+teilZur.months.map(m=>fmt(round2(m.tax))).join('+'), 'hochgerechnet|19,10+45,48');
   t('Einnahmen-Export','altes Dokument bekommt kein Brutto-Feld',
     'brutto' in alsBuchungsdokument(csv('A;;G;01.08.2026;02.08.2026;;100').bookings[0],'o1'), false);
   const vmTeil=verschmelzeBuchungen([einDok],[alsBuchungsdokument(teil.bookings[0],'o1')]);
   t('Einnahmen-Export','Teilexport überschreibt vollständigen Stand nicht',
-    vmTeil.schreiben[0].auszahlung+'|'+vmTeil.schreiben[0].raten, einDok.auszahlung+'|2');
+    vmTeil.schreiben[0].auszahlung+'|'+vmTeil.schreiben[0].raten.length, einDok.auszahlung+'|2');
   const vmVoll=verschmelzeBuchungen([alsBuchungsdokument(teil.bookings[0],'o1')],[einDok]);
   t('Einnahmen-Export','vollständiger Export ersetzt den Teilstand',
-    vmVoll.schreiben[0].auszahlung+'|'+vmVoll.schreiben[0].raten, einDok.auszahlung+'|2');
+    vmVoll.schreiben[0].auszahlung+'|'+vmVoll.schreiben[0].raten.length, einDok.auszahlung+'|2');
 
   /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
   const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',

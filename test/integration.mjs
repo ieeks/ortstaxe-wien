@@ -115,21 +115,21 @@ console.log('\nEinnahmen-Export (Transaktionsverlauf) wird gelesen');
 const EIN = 'Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,Buchungsdatum,Startdatum,Enddatum,'
   + 'Nächte,Gast,Inserat,Details,Referenzcode,Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
   + 'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr\n';
-const rate = (betrag, geb, brutto) => '09/01/2026,,Buchung,HE1,01/16/2026,06/18/2026,07/19/2026,31,Erna,"Studio",,,EUR,'
+const rate = (datum, betrag, geb, brutto) => datum + ',,Buchung,HE1,01/16/2026,06/18/2026,07/19/2026,31,Erna,"Studio",,,EUR,'
   + betrag + ',,"' + geb + '",,0.00,' + brutto + ',0.00,2026\n';
 const payout = '07/20/2026,07/27/2026,Payout,,,,,,,,"Zahlen an X",G-1,EUR,,51.15,,,,,,\n';
-await lade(EIN + payout + rate('51.15', '1,91', '53.06') + rate('1534.44', '57,30', '1591.74'));
+await lade(EIN + payout + rate('07/20/2026', '51.15', '1,91', '53.06') + rate('06/19/2026', '1534.44', '57,30', '1591.74'));
 await seite.waitForTimeout(900);
 const he1 = () => db().then(d => d.buchungen[obj].HE1);
 t('eine Buchung aus zwei Raten gespeichert', (await he1()).auszahlung, 1585.59);
-t('Bruttoeinkünfte und Raten gespeichert', [(await he1()).brutto, (await he1()).raten], [1644.8, 2]);
+t('Bruttoeinkünfte und Auszahlungsdaten gespeichert', [(await he1()).brutto, (await he1()).raten], [1644.8, ['2026-07-20', '2026-06-19']]);
 t('Erkennung wird angezeigt', /Einnahmen-Export erkannt/.test(await seite.textContent('#warnings')), true);
 t('keine Zeile für die Auszahlung', await seite.$$eval('.paid-in', n => n.filter(x => !/^HE1$|^H[A-Z]/.test(x.dataset.key)).length), 0);
 // Ein späterer Export, der die erste Rate nicht mehr enthält, darf den
 // vollständigen Stand nicht durch den Rest ersetzen.
-await lade(EIN + rate('51.15', '1,91', '53.06'));
+await lade(EIN + rate('07/20/2026', '51.15', '1,91', '53.06'));
 await seite.waitForTimeout(900);
-t('Teilexport überschreibt nicht', [(await he1()).auszahlung, (await he1()).raten], [1585.59, 2]);
+t('Teilexport überschreibt nicht', [(await he1()).auszahlung, (await he1()).raten.length], [1585.59, 2]);
 t('fehlende Rate wird gemeldet', /1 von 2 Monatsraten/.test(await seite.textContent('#warnings')), true);
 t('und dass der vollständige Stand bleibt', /vollständigere gespeicherte Betrag bleibt stehen/.test(await seite.textContent('#warnings')), true);
 

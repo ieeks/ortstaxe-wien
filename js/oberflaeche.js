@@ -237,11 +237,13 @@ function render(res, opt){
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
       +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')
-        +(b.betragQuelle==='unvollstaendig'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — Betrag unvollständig</div>':'')+'</td>'
+        +(b.betragQuelle==='unvollstaendig'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — Betrag unvollständig</div>'
+          :b.betragQuelle==='hochgerechnet'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — hochgerechnet</div>'
+          :b.raten && b.raten<b.ratenSoll?'<div class="flag ok">'+b.raten+' von '+b.ratenSoll+' Raten — exakt über Gastbetrag</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
         +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="'
-        +(b.betragQuelle==='beleg'?'exakt':b.betragQuelle==='unvollstaendig'?'Rate fehlt':'geschätzt')+'" '
+        +(b.betragQuelle==='beleg'?'exakt':b.betragQuelle==='unvollstaendig'?'Rate fehlt':b.betragQuelle==='hochgerechnet'?'hochgerechnet':'geschätzt')+'" '
         +(sperren || offlineAnzeige() || geschlosseneBuchung(b.code)?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'

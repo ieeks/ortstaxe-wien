@@ -112,8 +112,13 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   Einnahmen-Export (Transaktionsverlauf) in die Tabelle, die `compute` liest:
   Auszahlungszeilen weg, Monatsraten je Code summiert, `Bruttoeinkünfte` als
   exakte Basis statt Gebühren-Hochrechnung. Gebühr über 10 % = Modell „nur
-  Gastgeber zahlt“, dann ohne Gast-Servicegebühr. Fehlt eine Rate, ist die
-  Buchung `betragQuelle: 'unvollstaendig'`
+  Gastgeber zahlt“, dann ohne Gast-Servicegebühr. Je Rate wird das
+  Auszahlungsdatum weitergereicht; fehlt eine Rate, ordnet `gedeckteNaechte`
+  die vorhandenen über das Datum ihrem Ratenmonat zu, und `compute` rechnet über
+  den Preis je Nacht hoch (`betragQuelle: 'hochgerechnet'`). Im Modell „nur
+  Gastgeber zahlt“ macht „Vom Gast bezahlt“ das exakt (`'beleg'`). Lässt sich
+  nichts zuordnen: `'unvollstaendig'`. Gespeichert wird immer der Rohwert, die
+  Hochrechnung entsteht bei jeder Rechnung neu
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen
@@ -287,7 +292,7 @@ schon auf das neue zeigt, und der Bestand von A landet unter B.
 gültigen gespeicherten Wert nicht mit `null` überschreiben: solche Zeilen werden
 nicht geschrieben, gemeldet, und der Ungespeichert-Marker bleibt an.
 
-**Einnahmen-Export: `brutto` und `raten` stehen nur im Dokument, wenn vorhanden.**
+**Einnahmen-Export: `brutto` und `raten` (Liste der Auszahlungsdaten, ISO) stehen nur im Dokument, wenn vorhanden.**
 Ein zusätzliches `null`-Feld änderte die kanonische Form jedes älteren Dokuments,
 und `pruefeSperren` meldete in abgeschlossenen Monaten Änderungen, die es nicht
 gibt. `verschmelzeBuchungen` lässt einen Stand mit mehr Raten nicht durch einen
