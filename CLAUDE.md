@@ -108,6 +108,12 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   Fälligkeit (15. des Folgemonats) und Filter nach Fälligkeitsmonat; der Filter
   selbst ist reiner Sitzungszustand in `oberflaeche.js`
 - `baueCsvMonate` / `baueCsvBuchungen` / `baueCsvGastbetraege` — die drei Exporte
+- `istEinnahmenExport` / `ausEinnahmenExport` / `erwarteteRaten` — übersetzt den
+  Einnahmen-Export (Transaktionsverlauf) in die Tabelle, die `compute` liest:
+  Auszahlungszeilen weg, Monatsraten je Code summiert, `Bruttoeinkünfte` als
+  exakte Basis statt Gebühren-Hochrechnung. Gebühr über 10 % = Modell „nur
+  Gastgeber zahlt“, dann ohne Gast-Servicegebühr. Fehlt eine Rate, ist die
+  Buchung `betragQuelle: 'unvollstaendig'`
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen
@@ -280,6 +286,14 @@ schon auf das neue zeigt, und der Bestand von A landet unter B.
 (`gastbetragStatus` neben `betragStatus`). Eine unlesbare Eingabe darf einen
 gültigen gespeicherten Wert nicht mit `null` überschreiben: solche Zeilen werden
 nicht geschrieben, gemeldet, und der Ungespeichert-Marker bleibt an.
+
+**Einnahmen-Export: `brutto` und `raten` stehen nur im Dokument, wenn vorhanden.**
+Ein zusätzliches `null`-Feld änderte die kanonische Form jedes älteren Dokuments,
+und `pruefeSperren` meldete in abgeschlossenen Monaten Änderungen, die es nicht
+gibt. `verschmelzeBuchungen` lässt einen Stand mit mehr Raten nicht durch einen
+Export mit weniger ersetzen (Exportzeitraum beginnt mitten im Aufenthalt) und
+meldet das über `behalten`. Die Hinweise der Datei hält `dateiHinweise` fest —
+nach dem Import rechnet die Anzeige aus der Datenbank und kennt sie sonst nicht.
 
 **`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der
 Datenbank vor, ist er bereits der Speicher — die Werte zusätzlich in `paidRaw`

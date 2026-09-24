@@ -236,10 +236,12 @@ function render(res, opt){
     g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
-      +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
+      +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')
+        +(b.betragQuelle==='unvollstaendig'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — Betrag unvollständig</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
-        +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="'
+        +(b.betragQuelle==='beleg'?'exakt':b.betragQuelle==='unvollstaendig'?'Rate fehlt':'geschätzt')+'" '
         +(sperren || offlineAnzeige() || geschlosseneBuchung(b.code)?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
@@ -270,9 +272,11 @@ function render(res, opt){
   }
 
   const w=document.getElementById('warnings');
-  w.innerHTML = res.warn.length
-    ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'
-    : '';
+  const liste=xs=>'<div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+xs.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>';
+  const eigene=new Set(res.warn);
+  const ausDatei=dateiHinweise ? dateiHinweise.liste.filter(x=>!eigene.has(x)) : [];
+  w.innerHTML = (res.warn.length ? '<h2>Hinweise</h2>'+liste(res.warn) : '')
+    + (ausDatei.length ? '<h2>Zur importierten Datei „'+esc(dateiHinweise.datei)+'“</h2>'+liste(ausDatei) : '');
   document.getElementById('out').classList.remove('hide');
   markiereSpeicherstand();
 
@@ -284,6 +288,11 @@ function render(res, opt){
 
 /* --- Steuerung --- */
 let lastText=null;
+/* Hinweise aus der zuletzt importierten Datei. Nach dem Import rechnet die
+   Anzeige aus dem gespeicherten Bestand — was nur die Datei wusste (Einnahmen-
+   Export erkannt, fehlende Monatsraten, von Airbnb abgeführte Steuer, nicht
+   verrechnete Anpassungen), verschwände sonst im Moment des Speicherns. */
+let dateiHinweise=null;
 /* Buchungsdokumente aus Firestore, sobald angemeldet und ein Objekt gewählt
    ist. null heißt: es wird wie bisher aus der CSV gerechnet. */
 let wolkeBestand=null;
@@ -358,6 +367,7 @@ function load(f){
   r.onload=()=>{
     const vorher={lastText,wolkeBestand,paid:{...paidRaw},ungespeichert};
     lastText=r.result;
+    dateiHinweise=null;         // gehören zur vorigen Datei
     wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
     neuerBestand();             // wartende Aufträge gehören zum alten Bestand
     // Solange der Import läuft, zeigt die Tabelle eine Datei, die noch
@@ -690,6 +700,9 @@ async function importieren(ziel, opt, version, dateiname, text){
     neuerBestand();
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
     ungespeichert=false;
+    dateiHinweise={datei:dateiname, liste:res.warn.concat(vm.behalten.map(k=>k.code
+      +' — die Datei enthält nur '+k.raten+' Monatsrate'+(k.raten===1?'':'n')+', gespeichert sind '
+      +k.gespeichert+'. Der vollständigere gespeicherte Betrag bleibt stehen.'))};
     run();
 
     const info=$('paidInfo'), teile=[];
@@ -795,7 +808,7 @@ $('anmelden').onclick=async()=>{
   catch(ex){ stand(ex.message, true); }
 };
 $('abmelden').onclick=async()=>{
-  try{ await daten.abmelden(); wolkeBestand=null; objektId=null; objekte=[]; stand(''); }
+  try{ await daten.abmelden(); wolkeBestand=null; dateiHinweise=null; objektId=null; objekte=[]; stand(''); }
   catch(ex){ stand(ex.message, true); }
 };
 $('objekt').onchange=async()=>{
@@ -805,7 +818,7 @@ $('objekt').onchange=async()=>{
   // Bestand stehen, wäre die Tabelle des alten Objekts weiter bearbeitbar,
   // während objektId schon auf das neue zeigt; das Autospeichern schriebe
   // dann A unter B.
-  lastText=null; wolkeBestand=null; abschluesse={};
+  lastText=null; wolkeBestand=null; abschluesse={}; dateiHinweise=null;
   for(const k in paidRaw) delete paidRaw[k];
   leereAnzeige();
   objektId=$('objekt').value;
@@ -842,6 +855,7 @@ $('standZurueck').onclick=async()=>{
   // der Wiederherstellung ab, schriebe es die alten Daten wieder hinein und
   // machte sie damit rückgängig.
   clearTimeout(tippUhr); tippUhr=null;
+  dateiHinweise=null;                      // die Datei ist nicht mehr der Stand
   // Und für die Dauer des Vorgangs keine neuen zulassen. Abwarten allein
   // genügte nicht: die Tabelle blieb bearbeitbar, während die
   // Wiederherstellung lief, und ein Tastendruck erzeugte aus dem alten
@@ -912,7 +926,7 @@ $('objektNeu').onclick=async()=>{
     daten = await import('./daten.js');
     await daten.beobachteAnmeldung(p=>{
       konto=p; zeichneLeiste();
-      if(p) nachAnmeldung(); else { wolkeBestand=null; abschluesse={}; $('monatsarbeit').classList.add('hide'); run(); }
+      if(p) nachAnmeldung(); else { wolkeBestand=null; dateiHinweise=null; abschluesse={}; $('monatsarbeit').classList.add('hide'); run(); }
     });
     $('wolke').classList.remove('hide');
   }catch(e){ /* still: ohne Datenbank rechnet das Werkzeug vollständig */ }
@@ -996,7 +1010,7 @@ $('belegpaket').onclick=()=>{
   });
 };
 function beschreibeAenderung(e){
-  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags'};
+  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags',brutto:'Bruttoeinkünfte',raten:'Monatsraten'};
   const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €':String(v);
   return (e.vorher?'':'Neu angelegt\n')+(e.nachher?'':'Gelöscht\n')+Object.entries(namen)
     .filter(([k])=>e.vorher?.[k]!==e.nachher?.[k])

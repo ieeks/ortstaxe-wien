@@ -30,7 +30,7 @@ selbst unter „Wie gerechnet wird“ verlinkt.
 
 ## Benutzung
 
-1. Bei Airbnb → **Reservierungen** → **Exportieren** die CSV herunterladen
+1. Bei Airbnb → **Einnahmen** → **Transaktionsverlauf** die CSV herunterladen (der frühere Reservierungs-Export wird weiterhin gelesen)
 2. Die Datei auf das Feld ziehen oder anklicken und auswählen
 3. Optionen prüfen:
    - **Betragsbasis** — ob die Spalte „Einkünfte" ohne USt oder inkl. 10 % USt geführt ist
