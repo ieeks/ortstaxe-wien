@@ -125,7 +125,7 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   nicht verrechnet, sondern als `offen` an der Buchung gespeichert; `compute`
   meldet sie bei jeder Rechnung, also auch nach dem Laden und in der
   Monatsprüfung (dort nur mit Bestätigung abschließbar). Steht die Buchung
-  nicht in der Datei, hängt `importieren` den Posten an die gespeicherte
+  nicht in der Datei, hängt `importieren` den Posten an die gespeicherte Buchung
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen
