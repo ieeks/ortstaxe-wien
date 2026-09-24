@@ -18,6 +18,8 @@ import {
   leseGastbetraege,
   merkeGastbetraege,
   monatsSummen,
+  ueberweisungen,
+  filtereUeberweisungen,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -78,6 +80,76 @@ function fallback(text, done){
   document.body.removeChild(ta);
 }
 
+/* Überweisungen an die MA 6, gefiltert nach Fälligkeit. Der Filter ist reine
+   Ansicht: er hält nur Sitzungszustand, ändert keine Rechnung und wird nicht
+   gespeichert. Die Liste kommt fertig aus kern.js — hier wird nur gezeigt. */
+let letzteUeberweisungen=[];
+const faelligFilter={von:'', bis:''};
+const tagDE=iso=>iso.slice(8,10)+'.'+iso.slice(5,7)+'.'+iso.slice(0,4);
+
+function zeichneUeberweisungen(liste){
+  letzteUeberweisungen=liste;
+  // Auswahl aus den vorhandenen Fälligkeiten. Eine Grenze, die es in den neuen
+  // Daten nicht mehr gibt, fällt weg, statt unsichtbar weiterzufiltern.
+  const monate=[...new Set(liste.map(u=>u.faellig.slice(0,7)))];
+  ['von','bis'].forEach(k=>{
+    if(faelligFilter[k] && !monate.includes(faelligFilter[k])) faelligFilter[k]='';
+    const sel=document.getElementById(k==='von'?'faelligVon':'faelligBis');
+    sel.innerHTML='<option value="">'+(k==='von'?'frühester':'spätester')+'</option>'
+      +monate.map(m=>'<option value="'+m+'"'+(m===faelligFilter[k]?' selected':'')+'>'
+        +tagDE(m+'-15')+'</option>').join('');
+  });
+  const gezeigt=filtereUeberweisungen(liste, faelligFilter.von, faelligFilter.bis);
+  const pt=document.getElementById('pays');
+  let p='<tr><th>Aufenthaltsmonat</th><th>Fällig</th><th class="num">Betrag</th><th style="text-align:right">Verwendungszweck</th></tr>';
+  gezeigt.forEach(u=>{
+    p+='<tr><td class="mono">'+monthLabel(u.monat)+'</td><td class="mono dim">'+tagDE(u.faellig)+'</td>'
+      +'<td class="num"><strong>'+fmt(u.betrag)+'</strong></td>'
+      +'<td><div class="vz"><code>'+esc(u.vz)+'</code><button class="copy" data-vz="'+esc(u.vz)+'">Kopieren</button></div></td></tr>';
+  });
+  if(!gezeigt.length) p+='<tr><td colspan="4" class="dim">Keine Überweisung in diesem Fälligkeitszeitraum.</td></tr>';
+  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(round2(gezeigt.reduce((s,u)=>s+u.betrag,0)))+'</td><td></td></tr>';
+  pt.innerHTML=p;
+  pt.querySelectorAll('.copy').forEach(btn=>{
+    btn.onclick=()=>{
+      const t=btn.dataset.vz;
+      const done=()=>{ btn.textContent='Kopiert'; btn.classList.add('done'); setTimeout(()=>{btn.textContent='Kopieren';btn.classList.remove('done');},1600); };
+      if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(t).then(done,()=>fallback(t,done));
+      else fallback(t,done);
+    };
+  });
+  // Steht auch im Ausdruck, wo die Auswahlfelder ausgeblendet sind — sonst
+  // sähe eine gefilterte Summe dort aus wie die Summe aller Überweisungen.
+  const info=document.getElementById('paysFilterInfo');
+  const gefiltert=faelligFilter.von||faelligFilter.bis;
+  info.classList.toggle('hide', !gefiltert);
+  info.textContent = gefiltert
+    ? 'Gefiltert nach Fälligkeit '
+      +(faelligFilter.von?'ab '+tagDE(faelligFilter.von+'-15'):'')
+      +(faelligFilter.von&&faelligFilter.bis?' ':'')
+      +(faelligFilter.bis?'bis '+tagDE(faelligFilter.bis+'-15'):'')
+      +': '+gezeigt.length+' von '+liste.length+' Überweisungen. Die Summe gilt nur für diese.'
+    : '';
+}
+
+function setzeFaelligFilter(von, bis){
+  faelligFilter.von=von; faelligFilter.bis=bis;
+  // Vertauschte Grenzen ergäben still eine leere Liste; getauscht ist gemeint.
+  if(von && bis && von>bis){ faelligFilter.von=bis; faelligFilter.bis=von; }
+  zeichneUeberweisungen(letzteUeberweisungen);
+}
+document.getElementById('faelligVon').onchange=e=>setzeFaelligFilter(e.target.value, faelligFilter.bis);
+document.getElementById('faelligBis').onchange=e=>setzeFaelligFilter(faelligFilter.von, e.target.value);
+document.getElementById('faelligAlle').onclick=()=>setzeFaelligFilter('','');
+document.getElementById('faelligHeute').onclick=()=>{
+  // „Bis heute fällig“: der letzte Fälligkeitsmonat, dessen 15. nicht in der
+  // Zukunft liegt. Heute als Kalendertag in Wien, nicht in UTC.
+  const heute=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Vienna'});
+  const monate=[...new Set(letzteUeberweisungen.map(u=>u.faellig))].filter(f=>f<=heute);
+  if(!monate.length) return;   // noch nichts fällig: nichts einzugrenzen
+  setzeFaelligFilter(faelligFilter.von, monate[monate.length-1].slice(0,7));
+};
+
 function render(res, opt){
   document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
   renderQuota(res.bookings, opt.zaehl);
@@ -111,29 +183,7 @@ function render(res, opt){
   h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sum.nights+'</td><td class="num">'+fmt(sum.base)+'</td><td class="num">'+fmt(round2(sum.tax))+'</td></tr>';
   mt.innerHTML=h;
 
-  const pt=document.getElementById('pays');
-  const perMonth={};
-  res.months.forEach(m=>{ perMonth[m.month]=(perMonth[m.month]||0)+m.tax; });
-  const keys=Object.keys(perMonth).sort();
-  let p='<tr><th>Aufenthaltsmonat</th><th>Fällig</th><th class="num">Betrag</th><th style="text-align:right">Verwendungszweck</th></tr>';
-  keys.forEach(k=>{
-    const [y,mo]=k.split('-');
-    const due=new Date(Date.UTC(+y,+mo,15)).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
-    const vz=opt.konto+mo+y;
-    p+='<tr><td class="mono">'+monthLabel(k)+'</td><td class="mono dim">'+due+'</td>'
-      +'<td class="num"><strong>'+fmt(round2(perMonth[k]))+'</strong></td>'
-      +'<td><div class="vz"><code>'+esc(vz)+'</code><button class="copy" data-vz="'+esc(vz)+'">Kopieren</button></div></td></tr>';
-  });
-  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(round2(keys.reduce((s,k)=>s+round2(perMonth[k]),0)))+'</td><td></td></tr>';
-  pt.innerHTML=p;
-  pt.querySelectorAll('.copy').forEach(btn=>{
-    btn.onclick=()=>{
-      const t=btn.dataset.vz;
-      const done=()=>{ btn.textContent='Kopiert'; btn.classList.add('done'); setTimeout(()=>{btn.textContent='Kopieren';btn.classList.remove('done');},1600); };
-      if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(t).then(done,()=>fallback(t,done));
-      else fallback(t,done);
-    };
-  });
+  zeichneUeberweisungen(ueberweisungen(res.months, opt.konto));
 
   const jahre=jahressummen(res.months);
   let y='<tr><th>Kalenderjahr</th><th class="num">Meldemonate</th><th class="num">Nächte</th>'

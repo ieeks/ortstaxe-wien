@@ -548,6 +548,32 @@ function monatsSummen(months){
                                 tax:s.tax+round2(m.tax)}), {nights:0,base:0,tax:0});
 }
 
+/* Überweisungen an die MA 6: je Aufenthaltsmonat ein Betrag, fällig am 15.
+   des Folgemonats (§ 13 Abs. 1 WTFG). Gerundet je Meldeperiode wie in der
+   Monatstabelle. `faellig` ist ein ISO-Tag, damit sich danach filtern lässt,
+   ohne dass die Oberfläche das Datum selbst ableitet. */
+function ueberweisungen(months, konto){
+  const proMonat={};
+  months.forEach(m=>{ proMonat[m.month]=(proMonat[m.month]||0)+m.tax; });
+  return Object.keys(proMonat).sort().map(k=>{
+    const [y,mo]=k.split('-').map(Number);
+    const fy=mo===12?y+1:y, fm=mo===12?1:mo+1;
+    return {monat:k, faellig:fy+'-'+String(fm).padStart(2,'0')+'-15',
+            betrag:round2(proMonat[k]), vz:(konto||'')+k.slice(5)+k.slice(0,4)};
+  });
+}
+
+/* Filter nach Fälligkeitsmonat, beide Grenzen einschließlich. `von`/`bis` sind
+   'JJJJ-MM' oder leer (offen). Gefiltert wird nach der Fälligkeit, nicht nach
+   dem Aufenthalt: „Februar bis September fällig“ heißt Aufenthalte Jänner bis
+   August. */
+function filtereUeberweisungen(liste, von, bis){
+  return liste.filter(u=>{
+    const f=u.faellig.slice(0,7);
+    return (!von || f>=von) && (!bis || f<=bis);
+  });
+}
+
 function csvDatum(t){ return new Date(t).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}); }
 
 function baueCsvMonate(res, konto){
@@ -725,6 +751,8 @@ export {
   leseGastbetraege,
   merkeGastbetraege,
   monatsSummen,
+  ueberweisungen,
+  filtereUeberweisungen,
   csvDatum,
   baueCsvMonate,
   baueCsvBuchungen,

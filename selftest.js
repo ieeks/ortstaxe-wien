@@ -22,6 +22,8 @@ import {
   leseGastbetraege,
   merkeGastbetraege,
   monatsSummen,
+  ueberweisungen,
+  filtereUeberweisungen,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -587,6 +589,23 @@ if(location.search.indexOf('selftest')>=0){
   t('Abstimmung','Fußzeile zählt alle Nächte', monatsSummen(abst.months).nights, 3);
   t('Abstimmung','Fußzeilen-Ortstaxe = Summe der Monatsbeträge',
     fmt(round2(monatsSummen(abst.months).tax)), fmt(round2(abst.months.reduce((s,m)=>s+round2(m.tax),0))));
+
+  /* Überweisungen an MA 6: Fälligkeit und Filter danach */
+  const ueb=ueberweisungen(csv('A;;G;10.01.2026;11.01.2026;;100','B;;G;10.08.2026;11.08.2026;;100',
+    'C;;G;10.09.2026;11.09.2026;;100','D;;G;10.12.2026;11.12.2026;;100').months,'601005590');
+  t('Überweisung','fällig am 15. des Folgemonats', ueb.map(u=>u.faellig).join(','),
+    '2026-02-15,2026-09-15,2026-10-15,2027-01-15');
+  t('Überweisung','Dezember ist im Jänner des Folgejahres fällig', ueb[3].faellig, '2027-01-15');
+  t('Überweisung','Verwendungszweck Konto + MMJJJJ', ueb[1].vz, '601005590082026');
+  t('Überweisung','Betrag = gerundete Monatstaxe', fmt(ueb[1].betrag), fmt(round2(csv('B;;G;10.08.2026;11.08.2026;;100').months[0].tax)));
+  t('Überweisung','Filter Februar bis September fällig',
+    filtereUeberweisungen(ueb,'2026-02','2026-09').map(u=>u.monat).join(','), '2026-01,2026-08');
+  t('Überweisung','Filter ohne Grenzen zeigt alles', filtereUeberweisungen(ueb,'','').length, 4);
+  t('Überweisung','nur Untergrenze', filtereUeberweisungen(ueb,'2026-10','').map(u=>u.monat).join(','), '2026-09,2026-12');
+  t('Überweisung','nur Obergrenze', filtereUeberweisungen(ueb,'','2026-02').map(u=>u.monat).join(','), '2026-01');
+  /* Regressionsbuchung: Juni und Juli getrennt überwiesen, zusammen 64,58 */
+  const ueR=ueberweisungen(compute(parseCSV(HEAD+'\nR;;G;18.06.2026;19.07.2026;;1644,80'),BASE).months,'1');
+  t('Überweisung','Regressionsbuchung Juni/Juli', ueR.map(u=>fmt(u.betrag)).join('+'), '19,10+45,48');
 
   /* Datumsformat (F14). 01/08/2026 ist der 1. August oder der 8. Januar — je
      Zelle nicht entscheidbar. 01/08–03/08 ergab so 59 statt 2 Nächte. Die

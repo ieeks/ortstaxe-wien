@@ -93,6 +93,24 @@ await lade('Status;Name des Gastes;Startdatum;Enddatum;Einkünfte\n;Cem;05.10.20
 await seite.waitForTimeout(900);
 t('kein Pseudo-Code angelegt', Object.keys((await db()).buchungen[obj]).some(c => /Zeile/.test(c)), false);
 
+console.log('\nÜberweisungen lassen sich nach Fälligkeit filtern');
+await lade(KOPF + 'HF1;Bestätigt;Fritz;10.01.2026;11.01.2026;100,00;\nHF2;Bestätigt;Fritz;10.08.2026;11.08.2026;100,00;\n'
+  + 'HF3;Bestätigt;Fritz;10.12.2026;11.12.2026;100,00;\n');
+await seite.waitForTimeout(900);
+const zahlMonate = () => seite.$$eval('#pays tr:not(.tot) td:first-child', c => c.map(x => x.textContent.trim()));
+const alleMonate = await zahlMonate();
+t('ungefiltert auch Fälligkeit 15.01.2027', alleMonate.includes('12/2026'), true);
+await seite.selectOption('#faelligVon', '2026-02');
+await seite.selectOption('#faelligBis', '2026-09');
+t('Februar bis September fällig', await zahlMonate(), ['01/2026', '08/2026']);
+t('Filter wird angezeigt', /2 von \d+ Überweisungen/.test(await seite.textContent('#paysFilterInfo')), true);
+await seite.fill('.paid-in[data-key="HF2"]', '150,00');   // Neuberechnung behält den Filter
+await seite.waitForTimeout(2200);
+t('Filter überlebt Neuberechnung', await zahlMonate(), ['01/2026', '08/2026']);
+await seite.click('#faelligAlle');
+t('„Alle“ hebt den Filter auf', await zahlMonate(), alleMonate);
+t('Hinweis verschwindet', await seite.$eval('#paysFilterInfo', n => n.classList.contains('hide')), true);
+
 console.log('\nFrühere Stände lassen sich zurückspielen');
 await lade(KOPF + 'HM3;Bestätigt;Dora;05.11.2026;06.11.2026;100,00;\n');
 await seite.waitForTimeout(900);

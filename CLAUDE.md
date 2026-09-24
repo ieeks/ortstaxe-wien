@@ -104,6 +104,9 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
 - `occupancy` — 90-Tage-Zähler der Bauordnung, getrennt nach `kurz` (bis 30
   Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
 - `jahressummen` / `monatsSummen` — Jahres- und Fußzeilenwerte
+- `ueberweisungen` / `filtereUeberweisungen` — Überweisungen an die MA 6 mit
+  Fälligkeit (15. des Folgemonats) und Filter nach Fälligkeitsmonat; der Filter
+  selbst ist reiner Sitzungszustand in `oberflaeche.js`
 - `baueCsvMonate` / `baueCsvBuchungen` / `baueCsvGastbetraege` — die drei Exporte
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
