@@ -126,6 +126,13 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   meldet sie bei jeder Rechnung, also auch nach dem Laden und in der
   Monatsprüfung (dort nur mit Bestätigung abschließbar). Steht die Buchung
   nicht in der Datei, hängt `importieren` den Posten an die gespeicherte Buchung
+- `planeAufenthalt` / `preisPlanung` / `planungsVorgabe` — Preisplanung für das
+  Modell „nur Gastgeber zahlt“: was je Aufenthalt nach Ortstaxe, USt, Airbnb-
+  Gebühr und eigenen Kosten bleibt, und welcher Nachtpreis unter anderen
+  Bedingungen gleich viel übrig lässt. Die Ortstaxe mit derselben Schlüsselzahl
+  wie `compute` (Selbsttest vergleicht beide). Gleiche Kosten heben sich heraus;
+  sie zählen nur, wenn der Vergleich eigene hat. Die Vorbelegung kommt nur aus
+  vollständigen Buchungen in diesem Modell; die Felder sind Sitzungszustand
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen

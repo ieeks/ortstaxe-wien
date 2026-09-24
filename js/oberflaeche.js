@@ -20,6 +20,10 @@ import {
   monatsSummen,
   ueberweisungen,
   filtereUeberweisungen,
+  regimeOf,
+  leseGeld,
+  preisPlanung,
+  planungsVorgabe,
   offenVereinigt,
   baueCsvMonate,
   baueCsvBuchungen,
@@ -85,6 +89,11 @@ function fallback(text, done){
    Ansicht: er hält nur Sitzungszustand, ändert keine Rechnung und wird nicht
    gespeichert. Die Liste kommt fertig aus kern.js — hier wird nur gezeigt. */
 let letzteUeberweisungen=[];
+/* Preisplanung: Sitzungszustand wie der Fälligkeitsfilter. Ein Feld, das
+   jemand angefasst hat, überschreibt die Vorbelegung aus den Daten nicht mehr —
+   sonst setzte jede neue Rechnung die Eingabe zurück. */
+const planAngefasst=new Set();
+let planVorgabe=null;
 const faelligFilter={von:'', bis:''};
 const tagDE=iso=>iso.slice(8,10)+'.'+iso.slice(5,7)+'.'+iso.slice(0,4);
 
@@ -190,6 +199,8 @@ function render(res, opt){
   mt.innerHTML=h;
 
   zeichneUeberweisungen(ueberweisungen(res.months, opt.konto));
+  planVorgabe=planungsVorgabe(res.bookings);
+  fuellePlanung(); zeichnePlanung();
 
   const jahre=jahressummen(res.months);
   let y='<tr><th>Kalenderjahr</th><th class="num">Meldemonate</th><th class="num">Nächte</th>'
@@ -591,6 +602,8 @@ function leereAnzeige(){
     const el=document.getElementById(id); if(el) el.innerHTML='';
   });
   document.getElementById('out').classList.add('hide');
+  // Die Vorbelegung gehörte zu den weggeräumten Daten; Eingaben bleiben.
+  planVorgabe=null; fuellePlanung(); zeichnePlanung();
 }
 
 /* Jede Ladeanfrage bekommt eine Nummer. Antwortet eine ältere Anfrage später
@@ -1063,3 +1076,100 @@ if(location.search.indexOf('selftest')>=0)
     +'die Datei gehört neben index.html, und die Seite muss über einen Server laufen '
     +'(etwa <code>python3 -m http.server</code>), nicht über file://.<br><br>'
     +'<small>'+String(e&&e.message||e)+'</small></p>'; });
+
+/* --- Preisplanung ---------------------------------------------------------
+   Die Rechnung kommt aus kern.js (preisPlanung); hier nur Felder, Vorbelegung
+   und Anzeige. Gespeichert wird nichts. */
+const PLAN_FELDER=['planPreis','planNaechte','planReinigung','planKostenAufenthalt','planKostenNacht',
+                   'planHeuteSatz','planHeuteGeb','planVergleichSatz','planVergleichGeb',
+                   'planVergleichKostenAufenthalt','planVergleichKostenNacht'];
+const prozentText=x=>String(Math.round(x*10)/10).replace('.',',');
+
+function planStandard(){
+  // Ohne Buchungen im neuen Modell: 15,5 % Gebühr, mit 20 % USt, wenn keine
+  // UID hinterlegt ist — dieselbe Einstellung wie oben im Werkzeug.
+  const geb = planVorgabe ? planVorgabe.gebuehr : ($('uid').value==='ja' ? 15.5 : 18.6);
+  const heute = regimeOf(Date.UTC(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()));
+  return {
+    planPreis: planVorgabe ? fmt(planVorgabe.preis) : '100,00',
+    planNaechte: String(planVorgabe ? planVorgabe.naechte : 4),
+    planReinigung:'0,00', planKostenAufenthalt:'0,00', planKostenNacht:'0,00',
+    planHeuteSatz: heute, planHeuteGeb: prozentText(geb),
+    planVergleichSatz: 'r80', planVergleichGeb: prozentText(geb),
+    // Die Vergleichskosten folgen den heutigen, solange niemand sie ändert.
+    planVergleichKostenAufenthalt: $('planKostenAufenthalt').value || '0,00',
+    planVergleichKostenNacht: $('planKostenNacht').value || '0,00'
+  };
+}
+function fuellePlanung(){
+  // Zweimal: die Vergleichskosten lesen die heutigen, die dabei erst gesetzt werden.
+  for(let i=0;i<2;i++){
+    const std=planStandard();
+    PLAN_FELDER.forEach(id=>{ if(!planAngefasst.has(id)) $(id).value=std[id]; });
+  }
+}
+function zeichnePlanung(){
+  const erg=$('planErgebnis'), tab=$('planTabelle'), hin=$('planHinweis');
+  const basis=$('basis').value;
+  const zahl=(id,name)=>{
+    const g=leseGeld($(id).value);
+    if(g.status==='ungueltig' || g.status==='leer') throw new Error(name+': „'+$(id).value+'“ ist keine lesbare Zahl.');
+    return g.wert;
+  };
+  let r, p, heute, vergleich;
+  try{
+    const n=$('planNaechte').value.trim();
+    if(!/^\d+$/.test(n)) throw new Error('Nächte: „'+n+'“ ist keine ganze Zahl.');
+    p={preis:zahl('planPreis','Nachtpreis'), naechte:+n, reinigung:zahl('planReinigung','Reinigungsgebühr'),
+       kostenAufenthalt:zahl('planKostenAufenthalt','Kosten je Aufenthalt'),
+       kostenNacht:zahl('planKostenNacht','Kosten je Nacht'), basis};
+    heute={reg:$('planHeuteSatz').value, gebuehr:zahl('planHeuteGeb','Airbnb-Gebühr heute')};
+    vergleich={reg:$('planVergleichSatz').value, gebuehr:zahl('planVergleichGeb','Airbnb-Gebühr im Vergleich'),
+               kostenAufenthalt:zahl('planVergleichKostenAufenthalt','Kosten je Aufenthalt im Vergleich'),
+               kostenNacht:zahl('planVergleichKostenNacht','Kosten je Nacht im Vergleich')};
+    r=preisPlanung(p,heute,vergleich);
+  }catch(e){
+    erg.classList.add('fehler'); erg.textContent=e.message; tab.innerHTML=''; return;
+  }
+  erg.classList.remove('fehler');
+  const eur=x=>fmt(round2(x))+' €', vorz=x=>(x>=0?'+':'−')+fmt(round2(Math.abs(x)));
+  const gleich=Math.abs(r.differenz)<0.005;
+  const kostenGleich=Math.abs(r.heute.kosten-r.vergleich.kosten)<0.005;
+  erg.innerHTML = 'Nötiger Nachtpreis: <strong>'+eur(r.preisNoetig)+'</strong>'
+    +(gleich ? ' — unverändert.'
+      : ' statt '+eur(p.preis)+' ('+vorz(r.differenz)+' €'+(r.prozent!=null?' · '+vorz(r.prozent)+' %':'')+')')
+    +'<div class="dim" style="font-size:13px;margin-top:6px">Damit bleiben dir wie heute '+eur(r.heute.bleibt)
+    +' je Aufenthalt ('+eur(r.heute.bleibt/p.naechte)+' je Nacht). Ohne Preisanpassung wären es '
+    +eur(r.ohneAnpassung.bleibt)+' — '+eur(r.heute.bleibt-r.ohneAnpassung.bleibt)+' weniger je Aufenthalt.'
+    +(kostenGleich && r.heute.kosten>0 ? ' Deine Kosten ändern den nötigen Preis nicht, solange sie im Vergleich gleich bleiben — sie zeigen, was wirklich übrig bleibt.' : '')
+    +'</div>'
+    +(r.heute.bleibt<0 ? '<div class="flag" style="margin-top:6px">Schon heute bleibt nichts übrig — die Kosten übersteigen, was nach Ortstaxe und Gebühr ankommt.</div>' : '')
+    +(r.preisNoetig<0 ? '<div class="flag" style="margin-top:6px">Der nötige Preis ist negativ: die Reinigungsgebühr allein deckt den Überschuss. Die Rechnung ist hier nicht sinnvoll.</div>' : '');
+  const kopf=sz=>pct(EFF[sz.reg])+' · '+prozentText(sz.gebuehr)+' %';
+  const zeile=(name,k,fett)=>'<tr'+(fett?' class="tot"':'')+'><td>'+name+'</td>'
+    +[r.heute,r.ohneAnpassung,r.vergleich].map(x=>'<td class="num">'+(k==='kosten'||k==='ortstaxe'||k==='ust'||k==='airbnb'?'− ':'')+eur(x[k])+'</td>').join('')+'</tr>';
+  tab.innerHTML='<tr><th>je Aufenthalt ('+p.naechte+' Nächte)</th><th class="num">Heute<br><span class="dim">'+kopf(heute)
+    +'</span></th><th class="num">Vergleich, alter Preis<br><span class="dim">'+kopf(vergleich)
+    +'</span></th><th class="num">Vergleich, nötiger Preis<br><span class="dim">'+kopf(vergleich)+'</span></th></tr>'
+    +zeile('Gast zahlt','gast')+zeile('Ortstaxe','ortstaxe')
+    +(basis==='ust10' ? zeile('Umsatzsteuer 10 %','ust') : '')
+    +zeile('Airbnb-Gebühr','airbnb')+zeile('Deine Kosten','kosten')+zeile('Dir bleibt','bleibt',true);
+  hin.textContent=(planVorgabe
+      ? 'Vorbelegt aus '+planVorgabe.anzahl+' Buchung'+(planVorgabe.anzahl===1?'':'en')+' im Modell „nur Gastgeber zahlt“: '
+        +'Bruttoeinkünfte je Nacht (Reinigung anteilig enthalten — wer sie getrennt einträgt, zieht sie vom Nachtpreis ab), '
+        +'übliche Aufenthaltsdauer und tatsächlich einbehaltene Gebühr. '
+      : 'Standardwerte — mit einer geladenen Datei werden Preis, Dauer und Gebühr aus den Buchungen im neuen Modell vorbelegt. ')
+    +'Umsatzsteuer laut Einstellung „Betragsbasis“: '+(basis==='ust10'?'10 %':'keine')+'. '
+    +'Nicht enthalten: Einkommensteuer. Die Airbnb-Gebühr ist ein fester Prozentsatz — ändert Airbnb ihn, gilt die Rechnung nicht mehr.';
+}
+PLAN_FELDER.forEach(id=>{
+  const el=$(id);
+  const neu=()=>{ planAngefasst.add(id); fuellePlanung(); zeichnePlanung(); };
+  el.addEventListener('input', neu); el.addEventListener('change', neu);
+});
+// Betragsbasis und UID gehören zu den Einstellungen oben — die bestehenden
+// Handler bleiben, dieser rechnet die Planung nur nach.
+$('basis').addEventListener('change', ()=>{ fuellePlanung(); zeichnePlanung(); });
+$('uid').addEventListener('change', ()=>{ fuellePlanung(); zeichnePlanung(); });
+$('planZuruecksetzen').onclick=()=>{ planAngefasst.clear(); fuellePlanung(); zeichnePlanung(); };
+fuellePlanung(); zeichnePlanung();

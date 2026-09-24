@@ -54,6 +54,13 @@ button.offen{border-color:var(--flag);color:var(--flag)}
 button.offen::after{content:' •'}
 .opts{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end;margin-top:16px;padding:16px 18px}
 .opt{display:flex;flex-direction:column;gap:5px}
+/* Preisplanung: die Karten brauchen den Abstand, den details sonst nicht setzt. */
+.plan{margin:12px 0 0}
+.klein{font-size:11px}
+.plan-ergebnis{margin-top:12px;padding:14px 18px;font-size:14px}
+.plan-ergebnis strong{font-family:var(--mono);font-size:20px}
+.plan-ergebnis.fehler{color:var(--flag)}
+#planTabelle td.num,#planTabelle th.num{white-space:nowrap}
 /* Filter über der Überweisungstabelle: sitzt direkt über ihrer Karte. */
 .paysFilter{margin:0 0 8px;align-items:flex-end}
 .opt label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)}
@@ -154,7 +161,7 @@ details p,details li{color:var(--ink-2)}
   @page{size:A4 portrait;margin:14mm}
   body{background:#fff;font-size:10.5pt}
   .wrap{max-width:none;padding:0}
-  header,.drop,.opts,.btnrow,details,#error{display:none!important}
+  header,.drop,.opts,.btnrow,details,#error,#preisplanung{display:none!important}
   .print-only{display:block}
   .card{border:1px solid #999;break-inside:auto}
   h2{margin:14pt 0 6pt;color:#000;break-after:avoid}
@@ -366,6 +373,32 @@ details p,details li{color:var(--ink-2)}
 
   <div id="warnings"></div>
 </div>
+
+<details id="preisplanung">
+  <summary>Preisplanung — was muss der Nachtpreis kosten?</summary>
+  <p>Für das Airbnb-Modell „nur Gastgeber zahlt“: Der Gast zahlt den Inseratspreis, Airbnb behält die Gebühr davon ein, die Ortstaxe steckt im Preis. Die Rechnung zeigt, was dir je Aufenthalt bleibt, und welcher Nachtpreis unter anderen Bedingungen — etwa 8 % Ortstaxe ab 01.07.2027 — gleich viel übrig ließe.</p>
+  <div class="card opts plan">
+    <div class="opt"><label for="planPreis">Nachtpreis</label><input type="text" id="planPreis" inputmode="decimal"><span class="mono dim klein">€ je Nacht, was der Gast zahlt</span></div>
+    <div class="opt"><label for="planNaechte">Nächte</label><input type="text" id="planNaechte" inputmode="numeric"><span class="mono dim klein">je Aufenthalt</span></div>
+    <div class="opt"><label for="planReinigung">Reinigungsgebühr</label><input type="text" id="planReinigung" inputmode="decimal"><span class="mono dim klein">€ je Aufenthalt, zahlt der Gast</span></div>
+    <div class="opt"><label for="planKostenAufenthalt">Deine Kosten je Aufenthalt</label><input type="text" id="planKostenAufenthalt" inputmode="decimal"><span class="mono dim klein">€ — Reinigungskraft, Wäsche</span></div>
+    <div class="opt"><label for="planKostenNacht">Deine Kosten je Nacht</label><input type="text" id="planKostenNacht" inputmode="decimal"><span class="mono dim klein">€ — Strom, Verbrauch</span></div>
+  </div>
+  <div class="card opts plan">
+    <div class="opt"><label for="planHeuteSatz">Ortstaxe heute</label><select id="planHeuteSatz">
+      <option value="r32">3,2 % (bis 30.06.2026)</option><option value="r50">5 % (ab 01.07.2026)</option><option value="r80">8 % (ab 01.07.2027)</option></select></div>
+    <div class="opt"><label for="planHeuteGeb">Airbnb-Gebühr heute</label><input type="text" id="planHeuteGeb" inputmode="decimal"><span class="mono dim klein">% des Gastbetrags</span></div>
+    <div class="opt"><label for="planVergleichSatz">Ortstaxe im Vergleich</label><select id="planVergleichSatz">
+      <option value="r32">3,2 % (bis 30.06.2026)</option><option value="r50">5 % (ab 01.07.2026)</option><option value="r80">8 % (ab 01.07.2027)</option></select></div>
+    <div class="opt"><label for="planVergleichGeb">Airbnb-Gebühr im Vergleich</label><input type="text" id="planVergleichGeb" inputmode="decimal"><span class="mono dim klein">% des Gastbetrags</span></div>
+    <div class="opt"><label for="planVergleichKostenAufenthalt">Kosten je Aufenthalt im Vergleich</label><input type="text" id="planVergleichKostenAufenthalt" inputmode="decimal"><span class="mono dim klein">€ — wie heute, bis du es änderst</span></div>
+    <div class="opt"><label for="planVergleichKostenNacht">Kosten je Nacht im Vergleich</label><input type="text" id="planVergleichKostenNacht" inputmode="decimal"><span class="mono dim klein">€ — wie heute, bis du es änderst</span></div>
+    <button id="planZuruecksetzen" class="ghost">Vorbelegung</button>
+  </div>
+  <div class="card plan-ergebnis" id="planErgebnis"></div>
+  <div class="card tab"><table id="planTabelle"></table></div>
+  <div class="note" id="planHinweis"></div>
+</details>
 
 <details>
   <summary>Wie gerechnet wird</summary>
