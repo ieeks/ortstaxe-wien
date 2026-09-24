@@ -659,7 +659,8 @@ if(location.search.indexOf('selftest')>=0){
   /* Rundlauf: Bruttoeinkünfte und Raten überleben Speichern und Laden. */
   const einDok=alsBuchungsdokument(einReg.bookings[0],'o1');
   t('Einnahmen-Export','Dokument trägt Bruttoeinkünfte und Auszahlungsdaten',
-    einDok.brutto+'|'+einDok.raten.slice().sort().join(','), '1644.8|2026-06-19,2026-07-20');
+    einDok.brutto+'|'+einDok.raten.map(r=>r.datum+'='+r.betrag+'/'+r.brutto).sort().join(','),
+    '1644.8|2026-06-19=1534.44/1591.74,2026-07-20=51.15/53.06');
   const einZur=compute(alsCsvZeilen([einDok]),BASE);
   t('Einnahmen-Export','Rundlauf: gleiche Ortstaxe',
     einZur.months.map(m=>fmt(round2(m.tax))).join('+'), '19,10+45,48');
@@ -676,6 +677,41 @@ if(location.search.indexOf('selftest')>=0){
   const vmVoll=verschmelzeBuchungen([alsBuchungsdokument(teil.bookings[0],'o1')],[einDok]);
   t('Einnahmen-Export','vollständiger Export ersetzt den Teilstand',
     vmVoll.schreiben[0].auszahlung+'|'+vmVoll.schreiben[0].raten.length, einDok.auszahlung+'|2');
+
+  /* Nachprüfung PR 24, Befund 2: getrennte Monatsexporte bringen je eine
+     andere Rate. Zusammengeführt wird nach Auszahlungsdatum, nicht nach Anzahl. */
+  const dokJuni=alsBuchungsdokument(ein([RATE1]).bookings[0],'o1');
+  const dokJuli=alsBuchungsdokument(ein([RATE2]).bookings[0],'o1');
+  const vmJuniJuli=verschmelzeBuchungen([dokJuni],[dokJuli]);
+  t('Nachprüfung PR 24','Juni-, dann Juli-Rate: beide Raten bleiben',
+    vmJuniJuli.schreiben[0].raten.length+'|'+vmJuniJuli.schreiben[0].brutto+'|'+vmJuniJuli.schreiben[0].auszahlung,
+    '2|1644.8|1585.59');
+  const vmJuliJuni=verschmelzeBuchungen([dokJuli],[dokJuni]);
+  t('Nachprüfung PR 24','Juli-, dann Juni-Rate: ebenso', vmJuliJuni.schreiben[0].brutto, 1644.8);
+  t('Nachprüfung PR 24','zusammengeführt wird gemeldet', vmJuniJuli.behalten[0].zusammen, 2);
+  t('Nachprüfung PR 24','dieselbe Rate zweimal zählt einmal',
+    verschmelzeBuchungen([dokJuni],[dokJuni]).schreiben[0].brutto, 1591.74);
+  t('Nachprüfung PR 24','zusammengeführter Stand rechnet exakt',
+    compute(alsCsvZeilen(vmJuniJuli.schreiben),BASE).months.map(m=>fmt(round2(m.tax))).join('+')
+      +'|'+compute(alsCsvZeilen(vmJuniJuli.schreiben),BASE).bookings[0].betragQuelle,
+    '19,10+45,48|geschaetzt');
+  /* Befund 1: die CSV-Sicherung trägt Bruttoeinkünfte und Raten mit. */
+  const sichOpt=Object.assign({},BASE,{fee:3.6,gastfee:14});
+  const sichVor=compute(parseCSV(EIN+'\n'+einz('Buchung','HM4Y','09/16/2026','09/20/2026',4,'542.12','123,88','666.00')),
+                        Object.assign({},sichOpt,{paid:{HM4Y:'666,00'}}));
+  const sichNach=compute(parseCSV(baueCsvGastbetraege(sichVor)),sichOpt);
+  t('Nachprüfung PR 24','CSV-Sicherung: gleiche Ortstaxe nach dem Wiedereinlesen',
+    fmt(round2(sichNach.bookings[0].tax)), fmt(round2(sichVor.bookings[0].tax)));
+  t('Nachprüfung PR 24','CSV-Sicherung: Modell „nur Gastgeber“ bleibt erkannt', sichNach.bookings[0].betragQuelle, 'beleg');
+  const sichTeil=compute(parseCSV(baueCsvGastbetraege(ein([RATE1]))),BASE);
+  t('Nachprüfung PR 24','CSV-Sicherung: Hochrechnung bleibt',
+    sichTeil.bookings[0].betragQuelle+'|'+sichTeil.months.map(m=>fmt(round2(m.tax))).join('+'), 'hochgerechnet|19,10+45,48');
+  /* Befund 3: Obergrenze als Tag für „bis heute fällig“. */
+  const uebN=ueberweisungen(csv('A;;G;10.01.2026;11.01.2026;;100','B;;G;10.08.2026;11.08.2026;;100',
+    'C;;G;10.09.2026;11.09.2026;;100').months,'1');
+  t('Nachprüfung PR 24','bis Tag vor der ersten Fälligkeit: leer', filtereUeberweisungen(uebN,'','2026-02-14').length, 0);
+  t('Nachprüfung PR 24','bis Fälligkeitstag: eingeschlossen', filtereUeberweisungen(uebN,'','2026-02-15').length, 1);
+  t('Nachprüfung PR 24','ab Monat, bis Tag', filtereUeberweisungen(uebN,'2026-09','2026-10-14').map(u=>u.monat).join(','), '2026-08');
 
   /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
   const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',

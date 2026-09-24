@@ -105,8 +105,9 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
   Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
 - `jahressummen` / `monatsSummen` — Jahres- und Fußzeilenwerte
 - `ueberweisungen` / `filtereUeberweisungen` — Überweisungen an die MA 6 mit
-  Fälligkeit (15. des Folgemonats) und Filter nach Fälligkeitsmonat; der Filter
-  selbst ist reiner Sitzungszustand in `oberflaeche.js`
+  Fälligkeit (15. des Folgemonats) und Filter nach Fälligkeitsmonat; die
+  Obergrenze darf ein Tag sein („bis heute fällig“ — ist nichts fällig, bleibt
+  die Liste leer). Der Filter selbst ist reiner Sitzungszustand in `oberflaeche.js`
 - `baueCsvMonate` / `baueCsvBuchungen` / `baueCsvGastbetraege` — die drei Exporte
 - `istEinnahmenExport` / `ausEinnahmenExport` / `erwarteteRaten` — übersetzt den
   Einnahmen-Export (Transaktionsverlauf) in die Tabelle, die `compute` liest:
@@ -292,12 +293,19 @@ schon auf das neue zeigt, und der Bestand von A landet unter B.
 gültigen gespeicherten Wert nicht mit `null` überschreiben: solche Zeilen werden
 nicht geschrieben, gemeldet, und der Ungespeichert-Marker bleibt an.
 
-**Einnahmen-Export: `brutto` und `raten` (Liste der Auszahlungsdaten, ISO) stehen nur im Dokument, wenn vorhanden.**
+**Einnahmen-Export: `brutto` und `raten` stehen nur im Dokument, wenn vorhanden.**
+`raten` ist je Rate `{datum, betrag, brutto}` (Auszahlungsdatum ISO, Auszahlung,
+Bruttoeinkünfte) — nicht nur eine Summe: getrennte Monatsexporte bringen je
+eine andere Rate derselben Buchung, und nur mit den Einzelraten lassen sie sich
+nach Datum vereinigen. In Tabellenzellen steht eine Rate als `Datum|Betrag|Brutto`
+mit Punkt ohne Tausendertrenner. Die CSV-Sicherung (`baueCsvGastbetraege`)
+trägt Bruttoeinkünfte und Raten mit — ohne sie rechnet eine wieder geladene
+Sicherung mit dem Gebührensatz statt exakt.
 Ein zusätzliches `null`-Feld änderte die kanonische Form jedes älteren Dokuments,
 und `pruefeSperren` meldete in abgeschlossenen Monaten Änderungen, die es nicht
-gibt. `verschmelzeBuchungen` lässt einen Stand mit mehr Raten nicht durch einen
-Export mit weniger ersetzen (Exportzeitraum beginnt mitten im Aufenthalt) und
-meldet das über `behalten`. Die Hinweise der Datei hält `dateiHinweise` fest —
+gibt. `verschmelzeBuchungen` vereinigt die Raten nach Auszahlungsdatum (bei
+gleichem Datum gilt der Import) und meldet das über `behalten`; nur wenn Datum
+oder Betrag einer Rate fehlen, entscheidet die Anzahl. Die Hinweise der Datei hält `dateiHinweise` fest —
 nach dem Import rechnet die Anzeige aus der Datenbank und kennt sie sonst nicht.
 
 **`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der

@@ -59,6 +59,18 @@ await seite.goto(url, {waitUntil: 'networkidle'});
 await seite.waitForFunction(() => window.__db);
 
 if(!process.argv.includes('--monatsarbeit')){
+console.log('\n„Bis heute fällig“ ohne fällige Zahlung');
+await lade(KOPF + 'HZ1;Bestätigt;Zukunft;05.08.2030;06.08.2030;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(700);
+await seite.click('#faelligHeute');
+t('keine Überweisung gezeigt', await seite.$$eval('#pays tr:not(.tot) td.mono', c => c.length), 0);
+t('Summe 0,00', (await seite.$$eval('#pays tr.tot td', c => c.map(x => x.textContent.trim())))[1], '0,00');
+await seite.click('#faelligAlle');
+t('„Alle“ zeigt sie wieder', await seite.$$eval('#pays tr:not(.tot) td.mono', c => c.length) > 0, true);
+// Wieder stornieren: die folgenden Fälle prüfen Summen über den Bestand.
+await lade(KOPF + 'HZ1;Cancelled;Zukunft;05.08.2030;06.08.2030;100,00;\n');
+await seite.waitForTimeout(700);
+
 console.log('\nEingetippte Gastbeträge werden gespeichert');
 await lade(KOPF + 'HM1;Bestätigt;Anna;05.08.2026;06.08.2026;100,00;\n');
 await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(700);
@@ -122,7 +134,8 @@ await lade(EIN + payout + rate('07/20/2026', '51.15', '1,91', '53.06') + rate('0
 await seite.waitForTimeout(900);
 const he1 = () => db().then(d => d.buchungen[obj].HE1);
 t('eine Buchung aus zwei Raten gespeichert', (await he1()).auszahlung, 1585.59);
-t('Bruttoeinkünfte und Auszahlungsdaten gespeichert', [(await he1()).brutto, (await he1()).raten], [1644.8, ['2026-07-20', '2026-06-19']]);
+t('Bruttoeinkünfte und Raten gespeichert', [(await he1()).brutto, (await he1()).raten.map(r => r.datum + '=' + r.brutto)],
+  [1644.8, ['2026-07-20=53.06', '2026-06-19=1591.74']]);
 t('Erkennung wird angezeigt', /Einnahmen-Export erkannt/.test(await seite.textContent('#warnings')), true);
 t('keine Zeile für die Auszahlung', await seite.$$eval('.paid-in', n => n.filter(x => !/^HE1$|^H[A-Z]/.test(x.dataset.key)).length), 0);
 // Ein späterer Export, der die erste Rate nicht mehr enthält, darf den
@@ -131,7 +144,21 @@ await lade(EIN + rate('07/20/2026', '51.15', '1,91', '53.06'));
 await seite.waitForTimeout(900);
 t('Teilexport überschreibt nicht', [(await he1()).auszahlung, (await he1()).raten.length], [1585.59, 2]);
 t('fehlende Rate wird gemeldet', /1 von 2 Monatsraten/.test(await seite.textContent('#warnings')), true);
-t('und dass der vollständige Stand bleibt', /vollständigere gespeicherte Betrag bleibt stehen/.test(await seite.textContent('#warnings')), true);
+t('und dass zusammengeführt wurde', /Zusammengeführt zu 2 Raten/.test(await seite.textContent('#warnings')), true);
+/* Nachprüfung PR 24, Befund 1: die CSV-Sicherung, wie render() sie baut,
+   trägt Bruttoeinkünfte und Raten. */
+const sicherung = await seite.evaluate(() => window.__csvPaid);
+t('Sicherung hat die Spalten', /Bruttoeinkünfte Gastgeber;Monatsraten/.test(sicherung), true);
+t('Sicherung trägt die Raten je Buchung', /2026-06-19\|1534\.44\|1591\.74/.test(sicherung), true);
+
+console.log('\nGetrennte Monatsexporte führen Raten zusammen');
+const rate2 = (datum, betrag, geb, brutto) => rate(datum, betrag, geb, brutto).replace(',HE1,', ',HE2,');
+await lade(EIN + rate2('06/19/2026', '1534.44', '57,30', '1591.74'));
+await seite.waitForTimeout(900);
+await lade(EIN + rate2('07/20/2026', '51.15', '1,91', '53.06'));
+await seite.waitForTimeout(900);
+const he2 = await db().then(d => d.buchungen[obj].HE2);
+t('Juni- und Juli-Export ergeben beide Raten', [he2.brutto, he2.raten.length, he2.auszahlung], [1644.8, 2, 1585.59]);
 
 console.log('\nFrühere Stände lassen sich zurückspielen');
 await lade(KOPF + 'HM3;Bestätigt;Dora;05.11.2026;06.11.2026;100,00;\n');

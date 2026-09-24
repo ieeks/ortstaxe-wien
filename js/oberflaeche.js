@@ -92,10 +92,15 @@ function zeichneUeberweisungen(liste){
   // Auswahl aus den vorhandenen Fälligkeiten. Eine Grenze, die es in den neuen
   // Daten nicht mehr gibt, fällt weg, statt unsichtbar weiterzufiltern.
   const monate=[...new Set(liste.map(u=>u.faellig.slice(0,7)))];
+  // „Bis heute fällig“ setzt die Obergrenze auf einen Tag, nicht auf einen
+  // Monat. Sie bleibt auch stehen, wenn noch gar nichts fällig ist — dann ist
+  // die Liste eben leer, statt still alle künftigen Zahlungen zu zeigen.
+  const tagGrenze=k=>k==='bis' && faelligFilter.bis.length===10;
   ['von','bis'].forEach(k=>{
-    if(faelligFilter[k] && !monate.includes(faelligFilter[k])) faelligFilter[k]='';
+    if(faelligFilter[k] && !tagGrenze(k) && !monate.includes(faelligFilter[k])) faelligFilter[k]='';
     const sel=document.getElementById(k==='von'?'faelligVon':'faelligBis');
     sel.innerHTML='<option value="">'+(k==='von'?'frühester':'spätester')+'</option>'
+      +(tagGrenze(k) ? '<option value="'+faelligFilter.bis+'" selected>heute ('+tagDE(faelligFilter.bis)+')</option>' : '')
       +monate.map(m=>'<option value="'+m+'"'+(m===faelligFilter[k]?' selected':'')+'>'
         +tagDE(m+'-15')+'</option>').join('');
   });
@@ -127,7 +132,7 @@ function zeichneUeberweisungen(liste){
     ? 'Gefiltert nach Fälligkeit '
       +(faelligFilter.von?'ab '+tagDE(faelligFilter.von+'-15'):'')
       +(faelligFilter.von&&faelligFilter.bis?' ':'')
-      +(faelligFilter.bis?'bis '+tagDE(faelligFilter.bis+'-15'):'')
+      +(faelligFilter.bis?'bis '+tagDE(faelligFilter.bis.length===10?faelligFilter.bis:faelligFilter.bis+'-15'):'')
       +': '+gezeigt.length+' von '+liste.length+' Überweisungen. Die Summe gilt nur für diese.'
     : '';
 }
@@ -135,19 +140,19 @@ function zeichneUeberweisungen(liste){
 function setzeFaelligFilter(von, bis){
   faelligFilter.von=von; faelligFilter.bis=bis;
   // Vertauschte Grenzen ergäben still eine leere Liste; getauscht ist gemeint.
-  if(von && bis && von>bis){ faelligFilter.von=bis; faelligFilter.bis=von; }
+  // Nur zwischen zwei Monaten: „ab Oktober, bis heute“ ist leer, nicht vertauscht.
+  if(von && bis && bis.length===7 && von>bis){ faelligFilter.von=bis; faelligFilter.bis=von; }
   zeichneUeberweisungen(letzteUeberweisungen);
 }
 document.getElementById('faelligVon').onchange=e=>setzeFaelligFilter(e.target.value, faelligFilter.bis);
 document.getElementById('faelligBis').onchange=e=>setzeFaelligFilter(faelligFilter.von, e.target.value);
 document.getElementById('faelligAlle').onclick=()=>setzeFaelligFilter('','');
 document.getElementById('faelligHeute').onclick=()=>{
-  // „Bis heute fällig“: der letzte Fälligkeitsmonat, dessen 15. nicht in der
-  // Zukunft liegt. Heute als Kalendertag in Wien, nicht in UTC.
-  const heute=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Vienna'});
-  const monate=[...new Set(letzteUeberweisungen.map(u=>u.faellig))].filter(f=>f<=heute);
-  if(!monate.length) return;   // noch nichts fällig: nichts einzugrenzen
-  setzeFaelligFilter(faelligFilter.von, monate[monate.length-1].slice(0,7));
+  // „Bis heute fällig“: alles, dessen Fälligkeitstag nicht in der Zukunft
+  // liegt. Heute als Kalendertag in Wien, nicht in UTC. Ist noch nichts
+  // fällig, bleibt die Liste leer — früher kehrte der Handler dann ohne
+  // Änderung zurück, und die Tabelle zeigte weiter alle künftigen Zahlungen.
+  setzeFaelligFilter(faelligFilter.von, new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Vienna'}));
 };
 
 function render(res, opt){
@@ -703,8 +708,9 @@ async function importieren(ziel, opt, version, dateiname, text){
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
     ungespeichert=false;
     dateiHinweise={datei:dateiname, liste:res.warn.concat(vm.behalten.map(k=>k.code
-      +' — die Datei enthält nur '+k.raten+' Monatsrate'+(k.raten===1?'':'n')+', gespeichert sind '
-      +k.gespeichert+'. Der vollständigere gespeicherte Betrag bleibt stehen.'))};
+      +' — die Datei enthält '+k.raten+' Monatsrate'+(k.raten===1?'':'n')+', gespeichert waren '
+      +k.gespeichert+'. Zusammengeführt zu '+k.zusammen+' Rate'+(k.zusammen===1?'':'n')
+      +' — eine Rate, die nur im gespeicherten Stand steht, geht nicht verloren.'))};
     run();
 
     const info=$('paidInfo'), teile=[];
