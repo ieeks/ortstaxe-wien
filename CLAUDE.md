@@ -104,7 +104,28 @@ Speicherweg anders — zieht sie dort mit nach; sonst veraltet sie still.
 - `occupancy` — 90-Tage-Zähler der Bauordnung, getrennt nach `kurz` (bis 30
   Nächte), `grau` (31 Nächte bis 3 Monate) und `lang` (befreit)
 - `jahressummen` / `monatsSummen` — Jahres- und Fußzeilenwerte
+- `ueberweisungen` / `filtereUeberweisungen` — Überweisungen an die MA 6 mit
+  Fälligkeit (15. des Folgemonats) und Filter nach Fälligkeitsmonat; die
+  Obergrenze darf ein Tag sein („bis heute fällig“ — ist nichts fällig, bleibt
+  die Liste leer). Der Filter selbst ist reiner Sitzungszustand in `oberflaeche.js`
 - `baueCsvMonate` / `baueCsvBuchungen` / `baueCsvGastbetraege` — die drei Exporte
+- `istEinnahmenExport` / `ausEinnahmenExport` / `erwarteteRaten` — übersetzt den
+  Einnahmen-Export (Transaktionsverlauf) in die Tabelle, die `compute` liest:
+  Auszahlungszeilen weg, Monatsraten je Code summiert, `Bruttoeinkünfte` als
+  exakte Basis statt Gebühren-Hochrechnung. Gebühr über 10 % = Modell „nur
+  Gastgeber zahlt“, dann ohne Gast-Servicegebühr. Je Rate wird das
+  Auszahlungsdatum weitergereicht; fehlt eine Rate, ordnet `gedeckteNaechte`
+  die vorhandenen über das Datum ihrem Ratenmonat zu, und `compute` rechnet über
+  den Preis je Nacht hoch (`betragQuelle: 'hochgerechnet'`). Im Modell „nur
+  Gastgeber zahlt“ macht „Vom Gast bezahlt“ das exakt (`'beleg'`). Lässt sich
+  nichts zuordnen: `'unvollstaendig'`. Gespeichert wird immer der Rohwert, die
+  Hochrechnung entsteht bei jeder Rechnung neu
+  Die Spalte „Vom Gast bezahlt“ (`GAST_SPALTEN`) geht durch die Übersetzung.
+  Andere Zeilentypen mit Code (Erstattung, Anpassung, Stornogebühr) werden
+  nicht verrechnet, sondern als `offen` an der Buchung gespeichert; `compute`
+  meldet sie bei jeder Rechnung, also auch nach dem Laden und in der
+  Monatsprüfung (dort nur mit Bestätigung abschließbar). Steht die Buchung
+  nicht in der Datei, hängt `importieren` den Posten an die gespeicherte Buchung
 - `leseGastbetraege` / `merkeGastbetraege` — Gastbeträge aus einer früher
   exportierten CSV nachladen und über den Bestätigungs-Code zuordnen, ohne die
   Buchungsliste zu ersetzen
@@ -277,6 +298,21 @@ schon auf das neue zeigt, und der Bestand von A landet unter B.
 (`gastbetragStatus` neben `betragStatus`). Eine unlesbare Eingabe darf einen
 gültigen gespeicherten Wert nicht mit `null` überschreiben: solche Zeilen werden
 nicht geschrieben, gemeldet, und der Ungespeichert-Marker bleibt an.
+
+**Einnahmen-Export: `brutto` und `raten` stehen nur im Dokument, wenn vorhanden.**
+`raten` ist je Rate `{datum, betrag, brutto}` (Auszahlungsdatum ISO, Auszahlung,
+Bruttoeinkünfte) — nicht nur eine Summe: getrennte Monatsexporte bringen je
+eine andere Rate derselben Buchung, und nur mit den Einzelraten lassen sie sich
+nach Datum vereinigen. In Tabellenzellen steht eine Rate als `Datum|Betrag|Brutto`
+mit Punkt ohne Tausendertrenner. Die CSV-Sicherung (`baueCsvGastbetraege`)
+trägt Bruttoeinkünfte und Raten mit — ohne sie rechnet eine wieder geladene
+Sicherung mit dem Gebührensatz statt exakt.
+Ein zusätzliches `null`-Feld änderte die kanonische Form jedes älteren Dokuments,
+und `pruefeSperren` meldete in abgeschlossenen Monaten Änderungen, die es nicht
+gibt. `verschmelzeBuchungen` vereinigt die Raten nach Auszahlungsdatum (bei
+gleichem Datum gilt der Import) und meldet das über `behalten`; nur wenn Datum
+oder Betrag einer Rate fehlen, entscheidet die Anzahl. Die Hinweise der Datei hält `dateiHinweise` fest —
+nach dem Import rechnet die Anzeige aus der Datenbank und kennt sie sonst nicht.
 
 **`merkeGastbetraege` läuft nur im CSV-Betrieb.** Liegt der Bestand aus der
 Datenbank vor, ist er bereits der Speicher — die Werte zusätzlich in `paidRaw`

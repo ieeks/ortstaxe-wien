@@ -59,6 +59,18 @@ await seite.goto(url, {waitUntil: 'networkidle'});
 await seite.waitForFunction(() => window.__db);
 
 if(!process.argv.includes('--monatsarbeit')){
+console.log('\n„Bis heute fällig“ ohne fällige Zahlung');
+await lade(KOPF + 'HZ1;Bestätigt;Zukunft;05.08.2030;06.08.2030;100,00;\n');
+await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(700);
+await seite.click('#faelligHeute');
+t('keine Überweisung gezeigt', await seite.$$eval('#pays tr:not(.tot) td.mono', c => c.length), 0);
+t('Summe 0,00', (await seite.$$eval('#pays tr.tot td', c => c.map(x => x.textContent.trim())))[1], '0,00');
+await seite.click('#faelligAlle');
+t('„Alle“ zeigt sie wieder', await seite.$$eval('#pays tr:not(.tot) td.mono', c => c.length) > 0, true);
+// Wieder stornieren: die folgenden Fälle prüfen Summen über den Bestand.
+await lade(KOPF + 'HZ1;Cancelled;Zukunft;05.08.2030;06.08.2030;100,00;\n');
+await seite.waitForTimeout(700);
+
 console.log('\nEingetippte Gastbeträge werden gespeichert');
 await lade(KOPF + 'HM1;Bestätigt;Anna;05.08.2026;06.08.2026;100,00;\n');
 await seite.waitForSelector('#out:not(.hide)'); await seite.waitForTimeout(700);
@@ -92,6 +104,70 @@ console.log('\nZeilen ohne Bestätigungs-Code werden nicht gespeichert');
 await lade('Status;Name des Gastes;Startdatum;Enddatum;Einkünfte\n;Cem;05.10.2026;06.10.2026;100\n');
 await seite.waitForTimeout(900);
 t('kein Pseudo-Code angelegt', Object.keys((await db()).buchungen[obj]).some(c => /Zeile/.test(c)), false);
+
+console.log('\nÜberweisungen lassen sich nach Fälligkeit filtern');
+await lade(KOPF + 'HF1;Bestätigt;Fritz;10.01.2026;11.01.2026;100,00;\nHF2;Bestätigt;Fritz;10.08.2026;11.08.2026;100,00;\n'
+  + 'HF3;Bestätigt;Fritz;10.12.2026;11.12.2026;100,00;\n');
+await seite.waitForTimeout(900);
+const zahlMonate = () => seite.$$eval('#pays tr:not(.tot) td:first-child', c => c.map(x => x.textContent.trim()));
+const alleMonate = await zahlMonate();
+t('ungefiltert auch Fälligkeit 15.01.2027', alleMonate.includes('12/2026'), true);
+await seite.selectOption('#faelligVon', '2026-02');
+await seite.selectOption('#faelligBis', '2026-09');
+t('Februar bis September fällig', await zahlMonate(), ['01/2026', '08/2026']);
+t('Filter wird angezeigt', /2 von \d+ Überweisungen/.test(await seite.textContent('#paysFilterInfo')), true);
+await seite.fill('.paid-in[data-key="HF2"]', '150,00');   // Neuberechnung behält den Filter
+await seite.waitForTimeout(2200);
+t('Filter überlebt Neuberechnung', await zahlMonate(), ['01/2026', '08/2026']);
+await seite.click('#faelligAlle');
+t('„Alle“ hebt den Filter auf', await zahlMonate(), alleMonate);
+t('Hinweis verschwindet', await seite.$eval('#paysFilterInfo', n => n.classList.contains('hide')), true);
+
+console.log('\nEinnahmen-Export (Transaktionsverlauf) wird gelesen');
+const EIN = 'Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,Buchungsdatum,Startdatum,Enddatum,'
+  + 'Nächte,Gast,Inserat,Details,Referenzcode,Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
+  + 'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr\n';
+const rate = (datum, betrag, geb, brutto) => datum + ',,Buchung,HE1,01/16/2026,06/18/2026,07/19/2026,31,Erna,"Studio",,,EUR,'
+  + betrag + ',,"' + geb + '",,0.00,' + brutto + ',0.00,2026\n';
+const payout = '07/20/2026,07/27/2026,Payout,,,,,,,,"Zahlen an X",G-1,EUR,,51.15,,,,,,\n';
+await lade(EIN + payout + rate('07/20/2026', '51.15', '1,91', '53.06') + rate('06/19/2026', '1534.44', '57,30', '1591.74'));
+await seite.waitForTimeout(900);
+const he1 = () => db().then(d => d.buchungen[obj].HE1);
+t('eine Buchung aus zwei Raten gespeichert', (await he1()).auszahlung, 1585.59);
+t('Bruttoeinkünfte und Raten gespeichert', [(await he1()).brutto, (await he1()).raten.map(r => r.datum + '=' + r.brutto)],
+  [1644.8, ['2026-07-20=53.06', '2026-06-19=1591.74']]);
+t('Erkennung wird angezeigt', /Einnahmen-Export erkannt/.test(await seite.textContent('#warnings')), true);
+t('keine Zeile für die Auszahlung', await seite.$$eval('.paid-in', n => n.filter(x => !/^HE1$|^H[A-Z]/.test(x.dataset.key)).length), 0);
+// Ein späterer Export, der die erste Rate nicht mehr enthält, darf den
+// vollständigen Stand nicht durch den Rest ersetzen.
+await lade(EIN + rate('07/20/2026', '51.15', '1,91', '53.06'));
+await seite.waitForTimeout(900);
+t('Teilexport überschreibt nicht', [(await he1()).auszahlung, (await he1()).raten.length], [1585.59, 2]);
+t('fehlende Rate wird gemeldet', /1 von 2 Monatsraten/.test(await seite.textContent('#warnings')), true);
+t('und dass zusammengeführt wurde', /Zusammengeführt zu 2 Raten/.test(await seite.textContent('#warnings')), true);
+/* Nachprüfung PR 24, Befund 1: die CSV-Sicherung, wie render() sie baut,
+   trägt Bruttoeinkünfte und Raten. */
+const sicherung = await seite.evaluate(() => window.__csvPaid);
+t('Sicherung hat die Spalten', /Bruttoeinkünfte Gastgeber;Monatsraten/.test(sicherung), true);
+t('Sicherung trägt die Raten je Buchung', /2026-06-19\|1534\.44\|1591\.74/.test(sicherung), true);
+
+console.log('\nGetrennte Monatsexporte führen Raten zusammen');
+const rate2 = (datum, betrag, geb, brutto) => rate(datum, betrag, geb, brutto).replace(',HE1,', ',HE2,');
+await lade(EIN + rate2('06/19/2026', '1534.44', '57,30', '1591.74'));
+await seite.waitForTimeout(900);
+await lade(EIN + rate2('07/20/2026', '51.15', '1,91', '53.06'));
+await seite.waitForTimeout(900);
+const he2 = await db().then(d => d.buchungen[obj].HE2);
+t('Juni- und Juli-Export ergeben beide Raten', [he2.brutto, he2.raten.length, he2.auszahlung], [1644.8, 2, 1585.59]);
+
+console.log('\n„Vom Gast bezahlt“ direkt im Einnahmen-Export');
+const EING = EIN.replace('\n', ',Vom Gast bezahlt\n');
+const rate3 = (datum, betrag, geb, brutto, gast) => rate(datum, betrag, geb, brutto).replace(',HE1,', ',HE3,').replace('\n', ',' + gast + '\n');
+await lade(EING + rate3('06/19/2026', '1534.44', '57,30', '1591.74', '1842.18') + rate3('07/20/2026', '51.15', '1,91', '53.06', ''));
+await seite.waitForTimeout(900);
+const he3 = await db().then(d => d.buchungen[obj].HE3);
+t('Gastbetrag aus der Datei gespeichert', [he3.gastbetrag, he3.gastbetragQuelle], [1842.18, 'datei']);
+t('und exakt gerechnet', await seite.$eval('.paid-in[data-key="HE3"]', n => n.classList.contains('belegt')), true);
 
 console.log('\nFrühere Stände lassen sich zurückspielen');
 await lade(KOPF + 'HM3;Bestätigt;Dora;05.11.2026;06.11.2026;100,00;\n');
@@ -507,6 +583,23 @@ await seite.evaluate(async()=>{window.__offlineAnzeige=false;await document.getE
 t('Online wieder bearbeitbar',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.disabled),false);
 await seite.evaluate(async()=>{window.__ladeFehler=true;await document.getElementById('objekt').onchange();});
 t('Ladefehler verständlich angezeigt',/Laden fehlgeschlagen/.test(await seite.textContent('#wolkeStand')),true);
+console.log('\nOffene Posten aus dem Einnahmen-Export bleiben erhalten');
+await seite.evaluate(async()=>{window.__ladeFehler=false;window.__offlineAnzeige=false;await document.getElementById('objekt').onchange();});
+await seite.waitForTimeout(500);
+const EINK='Datum,Voraussichtliches Datum des Geldeingangs,Typ,Bestätigungs-Code,Buchungsdatum,Startdatum,Enddatum,'
+  +'Nächte,Gast,Inserat,Details,Referenzcode,Währung,Betrag,Ausgezahlt,Servicegebühr,Gebühr für schnelle Zahlung,'
+  +'Reinigungsgebühr,Bruttoeinkünfte,Von Airbnb abgeführte Steuer,Ertragsjahr\n';
+await lade(EINK+'09/11/2026,,Buchung,OP1,09/01/2026,09/10/2026,09/14/2026,4,Otto,"Studio",,,EUR,542.12,,"123,88",,46.00,666.00,0.00,2026\n');
+await seite.waitForTimeout(900);
+// Ein späterer Export, der die Buchung selbst nicht mehr enthält, nur die Erstattung.
+await lade(EINK+'10/02/2026,,Erstattung,OP1,,09/10/2026,09/14/2026,4,Otto,"Studio",,,EUR,-100.00,,,,,-100.00,0.00,2026\n');
+await seite.waitForTimeout(900);
+t('Erstattung an der gespeicherten Buchung',((await db()).buchungen[mo].OP1.offen||[]).map(o=>o.typ+' '+o.betrag),['Erstattung -100']);
+await seite.evaluate(async()=>{await document.getElementById('objekt').onchange();});
+await seite.waitForTimeout(600);
+t('nach erneutem Laden noch gemeldet',/OP1 \(Otto\) — offene Posten/.test(await seite.textContent('#warnings')),true);
+await seite.selectOption('#abschlussMonat','2026-09');
+t('Monatsprüfung nennt die Erstattung',/Erstattung/.test(await seite.textContent('#abschlussWarnungen')),true);
 if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;

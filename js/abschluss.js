@@ -18,7 +18,10 @@ export function monatsStand(docs,opt,monat){
   const res=compute(alsCsvZeilen(buchungen),{...opt,paid:{}});
   const fehler=res.warn.slice();
   const schaetzungen=res.bookings.filter(b=>!b.exempt && b.betragQuelle!=='beleg').map(b=>b.code);
-  if(schaetzungen.length)fehler.push('Geschätzte Gastbeträge: '+schaetzungen.join(', '));
+  const ohneRate=res.bookings.filter(b=>!b.exempt && (b.betragQuelle==='hochgerechnet'||b.betragQuelle==='unvollstaendig')).map(b=>b.code);
+  const gastSchaetzung=schaetzungen.filter(c=>!ohneRate.includes(c));
+  if(gastSchaetzung.length)fehler.push('Geschätzte Gastbeträge: '+gastSchaetzung.join(', '));
+  if(ohneRate.length)fehler.push('Monatsrate fehlt, Betrag hochgerechnet oder unvollständig: '+ohneRate.join(', '));
   if(!buchungen.length)fehler.push('Keine Buchungen vorhanden. Vollständigkeit des Monats gesondert bestätigen.');
   const monate=res.months.filter(m=>m.month===monat);
   const befreiteNaechte=res.bookings.filter(b=>b.exempt).reduce((s,b)=>s+b.parts.filter(p=>p.month===monat).reduce((n,p)=>n+p.nights,0),0);

@@ -18,6 +18,9 @@ import {
   leseGastbetraege,
   merkeGastbetraege,
   monatsSummen,
+  ueberweisungen,
+  filtereUeberweisungen,
+  offenVereinigt,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -78,6 +81,81 @@ function fallback(text, done){
   document.body.removeChild(ta);
 }
 
+/* Überweisungen an die MA 6, gefiltert nach Fälligkeit. Der Filter ist reine
+   Ansicht: er hält nur Sitzungszustand, ändert keine Rechnung und wird nicht
+   gespeichert. Die Liste kommt fertig aus kern.js — hier wird nur gezeigt. */
+let letzteUeberweisungen=[];
+const faelligFilter={von:'', bis:''};
+const tagDE=iso=>iso.slice(8,10)+'.'+iso.slice(5,7)+'.'+iso.slice(0,4);
+
+function zeichneUeberweisungen(liste){
+  letzteUeberweisungen=liste;
+  // Auswahl aus den vorhandenen Fälligkeiten. Eine Grenze, die es in den neuen
+  // Daten nicht mehr gibt, fällt weg, statt unsichtbar weiterzufiltern.
+  const monate=[...new Set(liste.map(u=>u.faellig.slice(0,7)))];
+  // „Bis heute fällig“ setzt die Obergrenze auf einen Tag, nicht auf einen
+  // Monat. Sie bleibt auch stehen, wenn noch gar nichts fällig ist — dann ist
+  // die Liste eben leer, statt still alle künftigen Zahlungen zu zeigen.
+  const tagGrenze=k=>k==='bis' && faelligFilter.bis.length===10;
+  ['von','bis'].forEach(k=>{
+    if(faelligFilter[k] && !tagGrenze(k) && !monate.includes(faelligFilter[k])) faelligFilter[k]='';
+    const sel=document.getElementById(k==='von'?'faelligVon':'faelligBis');
+    sel.innerHTML='<option value="">'+(k==='von'?'frühester':'spätester')+'</option>'
+      +(tagGrenze(k) ? '<option value="'+faelligFilter.bis+'" selected>heute ('+tagDE(faelligFilter.bis)+')</option>' : '')
+      +monate.map(m=>'<option value="'+m+'"'+(m===faelligFilter[k]?' selected':'')+'>'
+        +tagDE(m+'-15')+'</option>').join('');
+  });
+  const gezeigt=filtereUeberweisungen(liste, faelligFilter.von, faelligFilter.bis);
+  const pt=document.getElementById('pays');
+  let p='<tr><th>Aufenthaltsmonat</th><th>Fällig</th><th class="num">Betrag</th><th style="text-align:right">Verwendungszweck</th></tr>';
+  gezeigt.forEach(u=>{
+    p+='<tr><td class="mono">'+monthLabel(u.monat)+'</td><td class="mono dim">'+tagDE(u.faellig)+'</td>'
+      +'<td class="num"><strong>'+fmt(u.betrag)+'</strong></td>'
+      +'<td><div class="vz"><code>'+esc(u.vz)+'</code><button class="copy" data-vz="'+esc(u.vz)+'">Kopieren</button></div></td></tr>';
+  });
+  if(!gezeigt.length) p+='<tr><td colspan="4" class="dim">Keine Überweisung in diesem Fälligkeitszeitraum.</td></tr>';
+  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(round2(gezeigt.reduce((s,u)=>s+u.betrag,0)))+'</td><td></td></tr>';
+  pt.innerHTML=p;
+  pt.querySelectorAll('.copy').forEach(btn=>{
+    btn.onclick=()=>{
+      const t=btn.dataset.vz;
+      const done=()=>{ btn.textContent='Kopiert'; btn.classList.add('done'); setTimeout(()=>{btn.textContent='Kopieren';btn.classList.remove('done');},1600); };
+      if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(t).then(done,()=>fallback(t,done));
+      else fallback(t,done);
+    };
+  });
+  // Steht auch im Ausdruck, wo die Auswahlfelder ausgeblendet sind — sonst
+  // sähe eine gefilterte Summe dort aus wie die Summe aller Überweisungen.
+  const info=document.getElementById('paysFilterInfo');
+  const gefiltert=faelligFilter.von||faelligFilter.bis;
+  info.classList.toggle('hide', !gefiltert);
+  info.textContent = gefiltert
+    ? 'Gefiltert nach Fälligkeit '
+      +(faelligFilter.von?'ab '+tagDE(faelligFilter.von+'-15'):'')
+      +(faelligFilter.von&&faelligFilter.bis?' ':'')
+      +(faelligFilter.bis?'bis '+tagDE(faelligFilter.bis.length===10?faelligFilter.bis:faelligFilter.bis+'-15'):'')
+      +': '+gezeigt.length+' von '+liste.length+' Überweisungen. Die Summe gilt nur für diese.'
+    : '';
+}
+
+function setzeFaelligFilter(von, bis){
+  faelligFilter.von=von; faelligFilter.bis=bis;
+  // Vertauschte Grenzen ergäben still eine leere Liste; getauscht ist gemeint.
+  // Nur zwischen zwei Monaten: „ab Oktober, bis heute“ ist leer, nicht vertauscht.
+  if(von && bis && bis.length===7 && von>bis){ faelligFilter.von=bis; faelligFilter.bis=von; }
+  zeichneUeberweisungen(letzteUeberweisungen);
+}
+document.getElementById('faelligVon').onchange=e=>setzeFaelligFilter(e.target.value, faelligFilter.bis);
+document.getElementById('faelligBis').onchange=e=>setzeFaelligFilter(faelligFilter.von, e.target.value);
+document.getElementById('faelligAlle').onclick=()=>setzeFaelligFilter('','');
+document.getElementById('faelligHeute').onclick=()=>{
+  // „Bis heute fällig“: alles, dessen Fälligkeitstag nicht in der Zukunft
+  // liegt. Heute als Kalendertag in Wien, nicht in UTC. Ist noch nichts
+  // fällig, bleibt die Liste leer — früher kehrte der Handler dann ohne
+  // Änderung zurück, und die Tabelle zeigte weiter alle künftigen Zahlungen.
+  setzeFaelligFilter(faelligFilter.von, new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Vienna'}));
+};
+
 function render(res, opt){
   document.getElementById('feeEff').textContent = opt.fee ? 'wirksam '+opt.fee.toFixed(2).replace('.',',')+' %' : 'kein Aufschlag';
   renderQuota(res.bookings, opt.zaehl);
@@ -111,29 +189,7 @@ function render(res, opt){
   h+='<tr class="tot"><td>Summe</td><td></td><td class="num">'+sum.nights+'</td><td class="num">'+fmt(sum.base)+'</td><td class="num">'+fmt(round2(sum.tax))+'</td></tr>';
   mt.innerHTML=h;
 
-  const pt=document.getElementById('pays');
-  const perMonth={};
-  res.months.forEach(m=>{ perMonth[m.month]=(perMonth[m.month]||0)+m.tax; });
-  const keys=Object.keys(perMonth).sort();
-  let p='<tr><th>Aufenthaltsmonat</th><th>Fällig</th><th class="num">Betrag</th><th style="text-align:right">Verwendungszweck</th></tr>';
-  keys.forEach(k=>{
-    const [y,mo]=k.split('-');
-    const due=new Date(Date.UTC(+y,+mo,15)).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'});
-    const vz=opt.konto+mo+y;
-    p+='<tr><td class="mono">'+monthLabel(k)+'</td><td class="mono dim">'+due+'</td>'
-      +'<td class="num"><strong>'+fmt(round2(perMonth[k]))+'</strong></td>'
-      +'<td><div class="vz"><code>'+esc(vz)+'</code><button class="copy" data-vz="'+esc(vz)+'">Kopieren</button></div></td></tr>';
-  });
-  p+='<tr class="tot"><td colspan="2">Summe</td><td class="num">'+fmt(round2(keys.reduce((s,k)=>s+round2(perMonth[k]),0)))+'</td><td></td></tr>';
-  pt.innerHTML=p;
-  pt.querySelectorAll('.copy').forEach(btn=>{
-    btn.onclick=()=>{
-      const t=btn.dataset.vz;
-      const done=()=>{ btn.textContent='Kopiert'; btn.classList.add('done'); setTimeout(()=>{btn.textContent='Kopieren';btn.classList.remove('done');},1600); };
-      if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(t).then(done,()=>fallback(t,done));
-      else fallback(t,done);
-    };
-  });
+  zeichneUeberweisungen(ueberweisungen(res.months, opt.konto));
 
   const jahre=jahressummen(res.months);
   let y='<tr><th>Kalenderjahr</th><th class="num">Meldemonate</th><th class="num">Nächte</th>'
@@ -186,10 +242,14 @@ function render(res, opt){
     g+='<tr><td class="mono" style="font-size:12px">'+esc(b.code)+'</td><td>'+esc(b.name)+'</td>'
       +'<td class="mono" style="font-size:12px;white-space:nowrap">'+d(b.a)+' – '+d(b.b)+'</td>'
       +'<td class="num">'+b.nights+'</td>'
-      +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')+'</td>'
+      +'<td class="col-band">'+bandHTML(b.segs)+(b.parts.length>1&&!b.exempt?'<div class="flag ok">'+b.parts.length+' Meldeperioden</div>':'')
+        +(b.betragQuelle==='unvollstaendig'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — Betrag unvollständig</div>'
+          :b.betragQuelle==='hochgerechnet'?'<div class="flag">'+b.raten+' von '+b.ratenSoll+' Raten — hochgerechnet</div>'
+          :b.raten && b.raten<b.ratenSoll?'<div class="flag ok">'+b.raten+' von '+b.ratenSoll+' Raten — exakt über Gastbetrag</div>':'')+'</td>'
       +'<td class="num">'+fmt(b.amt)+'</td>'
       +'<td class="num col-paid"><input class="paid-in mono'+(b.betragQuelle==='beleg'?' belegt':'')+'" inputmode="decimal" '
-        +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="geschätzt" '
+        +'data-key="'+esc(b.key)+'" value="'+esc(val)+'" placeholder="'
+        +(b.betragQuelle==='beleg'?'exakt':b.betragQuelle==='unvollstaendig'?'Rate fehlt':b.betragQuelle==='hochgerechnet'?'hochgerechnet':'geschätzt')+'" '
         +(sperren || offlineAnzeige() || geschlosseneBuchung(b.code)?'disabled ':'')
         +'aria-label="Vom Gast bezahlt, '+esc(b.code)+'"></td>'
       +'<td>'+parts+'</td>'
@@ -220,9 +280,11 @@ function render(res, opt){
   }
 
   const w=document.getElementById('warnings');
-  w.innerHTML = res.warn.length
-    ? '<h2>Hinweise</h2><div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+res.warn.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'
-    : '';
+  const liste=xs=>'<div class="card" style="padding:14px 18px"><ul style="margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)">'+xs.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>';
+  const eigene=new Set(res.warn);
+  const ausDatei=dateiHinweise ? dateiHinweise.liste.filter(x=>!eigene.has(x)) : [];
+  w.innerHTML = (res.warn.length ? '<h2>Hinweise</h2>'+liste(res.warn) : '')
+    + (ausDatei.length ? '<h2>Zur importierten Datei „'+esc(dateiHinweise.datei)+'“</h2>'+liste(ausDatei) : '');
   document.getElementById('out').classList.remove('hide');
   markiereSpeicherstand();
 
@@ -234,6 +296,11 @@ function render(res, opt){
 
 /* --- Steuerung --- */
 let lastText=null;
+/* Hinweise aus der zuletzt importierten Datei. Nach dem Import rechnet die
+   Anzeige aus dem gespeicherten Bestand — was nur die Datei wusste (Einnahmen-
+   Export erkannt, fehlende Monatsraten, von Airbnb abgeführte Steuer, nicht
+   verrechnete Anpassungen), verschwände sonst im Moment des Speicherns. */
+let dateiHinweise=null;
 /* Buchungsdokumente aus Firestore, sobald angemeldet und ein Objekt gewählt
    ist. null heißt: es wird wie bisher aus der CSV gerechnet. */
 let wolkeBestand=null;
@@ -308,6 +375,7 @@ function load(f){
   r.onload=()=>{
     const vorher={lastText,wolkeBestand,paid:{...paidRaw},ungespeichert};
     lastText=r.result;
+    dateiHinweise=null;         // gehören zur vorigen Datei
     wolkeBestand=null;          // die frische Datei ist jetzt die Quelle
     neuerBestand();             // wartende Aufträge gehören zum alten Bestand
     // Solange der Import läuft, zeigt die Tabelle eine Datei, die noch
@@ -620,6 +688,17 @@ async function importieren(ziel, opt, version, dateiname, text){
 
     const gespeichert=await daten.ladeBuchungen(ziel);
     if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
+    // Offene Posten (Erstattung, Anpassung) zu Buchungen, die nicht in dieser
+    // Datei stehen, aber gespeichert sind: an die gespeicherte Buchung hängen.
+    // Sonst gäbe es den Hinweis nur in dieser Sitzung, und der Monatsabschluss
+    // kennte die ursprüngliche Buchung allein.
+    const neueCodes=new Set(neu.map(d=>d.code)), ohneZiel=[];
+    (res.offeneOhneBuchung||[]).forEach(x=>{
+      if(neueCodes.has(x.code)) return;
+      const a=gespeichert.find(d=>d.code===x.code);
+      if(a) neu.push(Object.assign({},a,{offen:offenVereinigt(a.offen,x.offen)}));
+      else ohneZiel.push(x.code);
+    });
     if(gespeichert.length){
       // Der Schnappschuss gehört mit den Einstellungen gesichert, unter denen
       // dieser Bestand entstanden ist — nicht mit den gerade eingestellten.
@@ -640,6 +719,10 @@ async function importieren(ziel, opt, version, dateiname, text){
     neuerBestand();
     wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
     ungespeichert=false;
+    dateiHinweise={datei:dateiname, liste:res.warn.concat(vm.behalten.map(k=>k.code
+      +' — die Datei enthält '+k.raten+' Monatsrate'+(k.raten===1?'':'n')+', gespeichert waren '
+      +k.gespeichert+'. Zusammengeführt zu '+k.zusammen+' Rate'+(k.zusammen===1?'':'n')
+      +' — eine Rate, die nur im gespeicherten Stand steht, geht nicht verloren.'))};
     run();
 
     const info=$('paidInfo'), teile=[];
@@ -648,6 +731,9 @@ async function importieren(ziel, opt, version, dateiname, text){
     if(stornos) teile.push(stornos+' als storniert vermerkt');
     if(vm.unberuehrt.length) teile.push(vm.unberuehrt.length+' aus früheren Importen unberührt');
     if(ohneCode) teile.push(ohneCode+' ohne Bestätigungs-Code nicht gespeichert');
+    if(ohneZiel.length)
+      teile.push('Achtung: offene Posten zu '+ohneZiel.join(', ')+' — diese Buchung'
+        +(ohneZiel.length===1?' ist':'en sind')+' weder in der Datei noch gespeichert, der Posten konnte nicht zugeordnet werden');
     if(kaputt.length)
       teile.push('Achtung: '+kaputt.length+' Zeile'+(kaputt.length===1?'':'n')
         +' mit unlesbarem Betrag zurückgestellt ('+kaputt.map(b=>b.code).slice(0,5).join(', ')
@@ -745,7 +831,7 @@ $('anmelden').onclick=async()=>{
   catch(ex){ stand(ex.message, true); }
 };
 $('abmelden').onclick=async()=>{
-  try{ await daten.abmelden(); wolkeBestand=null; objektId=null; objekte=[]; stand(''); }
+  try{ await daten.abmelden(); wolkeBestand=null; dateiHinweise=null; objektId=null; objekte=[]; stand(''); }
   catch(ex){ stand(ex.message, true); }
 };
 $('objekt').onchange=async()=>{
@@ -755,7 +841,7 @@ $('objekt').onchange=async()=>{
   // Bestand stehen, wäre die Tabelle des alten Objekts weiter bearbeitbar,
   // während objektId schon auf das neue zeigt; das Autospeichern schriebe
   // dann A unter B.
-  lastText=null; wolkeBestand=null; abschluesse={};
+  lastText=null; wolkeBestand=null; abschluesse={}; dateiHinweise=null;
   for(const k in paidRaw) delete paidRaw[k];
   leereAnzeige();
   objektId=$('objekt').value;
@@ -792,6 +878,7 @@ $('standZurueck').onclick=async()=>{
   // der Wiederherstellung ab, schriebe es die alten Daten wieder hinein und
   // machte sie damit rückgängig.
   clearTimeout(tippUhr); tippUhr=null;
+  dateiHinweise=null;                      // die Datei ist nicht mehr der Stand
   // Und für die Dauer des Vorgangs keine neuen zulassen. Abwarten allein
   // genügte nicht: die Tabelle blieb bearbeitbar, während die
   // Wiederherstellung lief, und ein Tastendruck erzeugte aus dem alten
@@ -862,7 +949,7 @@ $('objektNeu').onclick=async()=>{
     daten = await import('./daten.js');
     await daten.beobachteAnmeldung(p=>{
       konto=p; zeichneLeiste();
-      if(p) nachAnmeldung(); else { wolkeBestand=null; abschluesse={}; $('monatsarbeit').classList.add('hide'); run(); }
+      if(p) nachAnmeldung(); else { wolkeBestand=null; dateiHinweise=null; abschluesse={}; $('monatsarbeit').classList.add('hide'); run(); }
     });
     $('wolke').classList.remove('hide');
   }catch(e){ /* still: ohne Datenbank rechnet das Werkzeug vollständig */ }
@@ -946,8 +1033,11 @@ $('belegpaket').onclick=()=>{
   });
 };
 function beschreibeAenderung(e){
-  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags'};
-  const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €':String(v);
+  const namen={name:'Gast',status:'Status',von:'Anreise',bis:'Abreise',auszahlung:'Auszahlung',gastbetrag:'Gastbetrag',gastbetragQuelle:'Herkunft des Gastbetrags',brutto:'Bruttoeinkünfte',raten:'Monatsraten',offen:'Offene Posten'};
+  // Raten und offene Posten sind Listen von Objekten — String() machte daraus
+  // „[object Object]“.
+  const wert=(k,v)=>v==null?'nicht vorhanden':(k==='auszahlung'||k==='gastbetrag')?fmt(v)+' €'
+    :typeof v==='object'?JSON.stringify(v):String(v);
   return (e.vorher?'':'Neu angelegt\n')+(e.nachher?'':'Gelöscht\n')+Object.entries(namen)
     .filter(([k])=>e.vorher?.[k]!==e.nachher?.[k])
     .map(([k,n])=>n+': '+wert(k,e.vorher?.[k])+' → '+wert(k,e.nachher?.[k])).join('\n');
