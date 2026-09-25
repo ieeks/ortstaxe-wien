@@ -169,6 +169,28 @@ const he3 = await db().then(d => d.buchungen[obj].HE3);
 t('Gastbetrag aus der Datei gespeichert', [he3.gastbetrag, he3.gastbetragQuelle], [1842.18, 'datei']);
 t('und exakt gerechnet', await seite.$eval('.paid-in[data-key="HE3"]', n => n.classList.contains('belegt')), true);
 
+console.log('\nPreisplanung');
+await lade(EIN + '09/17/2026,,Buchung,HP1,09/10/2026,09/16/2026,09/20/2026,4,Etta,"Studio",,,EUR,542.12,,"123,88",,46.00,666.00,0.00,2026\n');
+await seite.waitForTimeout(900);
+await seite.click('#preisplanung summary');
+t('Gebühr aus den Buchungen vorbelegt', await seite.inputValue('#planHeuteGeb'), '18,6');
+t('Vergleich mit 8 % vorbelegt', await seite.inputValue('#planVergleichSatz'), 'r80');
+await seite.fill('#planPreis', '155,00'); await seite.fill('#planNaechte', '4');
+t('nötiger Nachtpreis', /Nötiger Nachtpreis: 160,54 €/.test(await seite.textContent('#planErgebnis')), true);
+await seite.fill('#planKostenAufenthalt', '60,00');
+t('Vergleichskosten folgen den heutigen', await seite.inputValue('#planVergleichKostenAufenthalt'), '60,00');
+await seite.fill('#planVergleichKostenAufenthalt', '70,00');
+const mitKosten = await seite.textContent('#planErgebnis');
+t('höhere Kosten erhöhen den nötigen Preis', /Nötiger Nachtpreis: 16[1-9],\d\d €/.test(mitKosten), true);
+// Eine neue Rechnung (Import) darf Eingaben nicht zurücksetzen.
+await lade(KOPF + 'HP2;Bestätigt;Paul;05.10.2026;06.10.2026;100,00;\n');
+await seite.waitForTimeout(900);
+t('Eingaben überleben eine neue Rechnung', [await seite.inputValue('#planPreis'), await seite.inputValue('#planVergleichKostenAufenthalt')], ['155,00', '70,00']);
+await seite.fill('#planNaechte', 'vier');
+t('unlesbare Eingabe wird gemeldet', /keine ganze Zahl/.test(await seite.textContent('#planErgebnis')), true);
+await seite.click('#planZuruecksetzen');
+t('Vorbelegung setzt zurück', await seite.inputValue('#planKostenAufenthalt'), '0,00');
+
 console.log('\nFrühere Stände lassen sich zurückspielen');
 await lade(KOPF + 'HM3;Bestätigt;Dora;05.11.2026;06.11.2026;100,00;\n');
 await seite.waitForTimeout(900);

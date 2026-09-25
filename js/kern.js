@@ -721,7 +721,7 @@ function compute(csvRows, opt){
       segs.push(reg);
     }
     const cls = exempt ? 'lang' : (nights<=30 ? 'kurz' : 'grau');
-    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,gastbetragStatus,netPay,brutto,raten,ratenListe,ratenSoll,offen,exempt,cls,base:baseTotal,tax:taxTotal,
+    bookings.push({code,key,stabil,name,status:st,a,b,nights,amt,paid,betragQuelle,gastbetragQuelle,betragStatus,gastbetragStatus,netPay,brutto,nurGastgeber,raten,ratenListe,ratenSoll,offen,exempt,cls,base:baseTotal,tax:taxTotal,
                    parts:Object.values(byKey).sort((x,y)=>x.month.localeCompare(y.month)),segs});
   }
   if(fluechtig)
@@ -831,6 +831,74 @@ function leseGastbetraege(csvRows){
 function merkeGastbetraege(bookings, ziel){
   bookings.forEach(b=>{ if(b.stabil && ziel[b.key]===undefined && b.paid) ziel[b.key]=fmt(b.paid); });
   return ziel;
+}
+
+/* --- Preisplanung ---
+   Was vom Preis eines Aufenthalts übrig bleibt, und welcher Nachtpreis unter
+   anderen Bedingungen (Ortstaxe-Satz, Airbnb-Gebühr) gleich viel übrig ließe.
+   Gerechnet wird für das Modell „nur Gastgeber zahlt“: der Gast zahlt den
+   Inseratspreis, Airbnb behält davon den Prozentsatz ein. Die Ortstaxe steckt
+   im Preis und kommt aus derselben Schlüsselzahl wie in compute(),
+   e/(ustF+e) — es gibt keine zweite Taxformel.
+
+   Aus Gastbetrag G bleibt: G − Ortstaxe − USt − Gebühr = G·(1/(ustF+e) − f).
+   Der nötige Gastbetrag ist damit (Überschuss + Kosten) / (1/(ustF+e) − f).
+   Bleiben die Kosten gleich, heben sie sich dabei heraus — sie zählen erst,
+   wenn der Vergleich eigene Kosten hat (sz.kostenAufenthalt/kostenNacht). */
+function planeAufenthalt(p, sz){
+  const ustF = p.basis==='ust10' ? 1.10 : 1.00, e = EFF[sz.reg];
+  const gast = p.preis*p.naechte + p.reinigung;
+  const ortstaxe = gast*e/(ustF+e);
+  const ust = gast*(ustF-1)/(ustF+e);
+  const airbnb = gast*sz.gebuehr/100;
+  return {gast, ortstaxe, ust, airbnb, kosten:planKosten(p,sz), bleibt:gast-ortstaxe-ust-airbnb-planKosten(p,sz)};
+}
+function planKosten(p, sz){
+  return (sz.kostenAufenthalt!=null ? sz.kostenAufenthalt : p.kostenAufenthalt)
+       + (sz.kostenNacht!=null ? sz.kostenNacht : p.kostenNacht)*p.naechte;
+}
+
+function preisPlanung(p, heute, vergleich){
+  if(!(p.naechte>=1) || p.naechte!==Math.round(p.naechte))
+    throw new Error('Die Nächte je Aufenthalt müssen eine ganze Zahl ab 1 sein.');
+  for(const [k,n] of [['preis','Der Nachtpreis'],['reinigung','Die Reinigungsgebühr'],
+                      ['kostenAufenthalt','Die Kosten je Aufenthalt'],['kostenNacht','Die Kosten je Nacht']])
+    if(!(p[k]>=0)) throw new Error(n+' muss eine Zahl ab 0 sein.');
+  for(const [sz,n] of [[heute,'heute'],[vergleich,'im Vergleich']]){
+    if(!EFF[sz.reg]) throw new Error('Unbekannter Ortstaxe-Satz '+n+'.');
+    if(!(sz.gebuehr>=0) || sz.gebuehr>=100) throw new Error('Die Airbnb-Gebühr '+n+' muss zwischen 0 und unter 100 % liegen.');
+    for(const k of ['kostenAufenthalt','kostenNacht'])
+      if(sz[k]!=null && !(sz[k]>=0)) throw new Error('Die Kosten '+n+' müssen eine Zahl ab 0 sein.');
+  }
+  const a=planeAufenthalt(p,heute);
+  const ustF = p.basis==='ust10' ? 1.10 : 1.00;
+  const k = 1/(ustF+EFF[vergleich.reg]) - vergleich.gebuehr/100;
+  if(!(k>0)) throw new Error('Bei dieser Gebühr bleibt vom Gastbetrag nach Ortstaxe und Gebühr nichts übrig.');
+  const gastNoetig = (a.bleibt + planKosten(p,vergleich))/k;
+  const preisNoetig = (gastNoetig - p.reinigung)/p.naechte;
+  return {
+    heute: a,
+    // Unter den neuen Bedingungen, aber zum alten Preis: was dann fehlt.
+    ohneAnpassung: planeAufenthalt(p,vergleich),
+    vergleich: planeAufenthalt(Object.assign({},p,{preis:preisNoetig}),vergleich),
+    preisNoetig, differenz: preisNoetig-p.preis,
+    prozent: p.preis>0 ? (preisNoetig/p.preis-1)*100 : null
+  };
+}
+
+/* Vorbelegung aus den Buchungen im Modell „nur Gastgeber zahlt“: Preis je
+   Nacht (Bruttoeinkünfte durch Nächte, Reinigung also anteilig enthalten),
+   typische Aufenthaltsdauer und die tatsächlich einbehaltene Gebühr. Ohne
+   solche Buchungen null — dann bleibt es bei den Standardwerten. Hochgerechnete
+   Teilbeträge (fehlende Rate) zählen nicht mit. */
+function planungsVorgabe(bookings){
+  const nb=(bookings||[]).filter(b=>b.nurGastgeber && b.brutto>0 && !b.exempt
+                                   && (!b.raten || b.raten>=b.ratenSoll));
+  if(!nb.length) return null;
+  const brutto=nb.reduce((x,b)=>x+b.brutto,0), naechte=nb.reduce((x,b)=>x+b.nights,0);
+  const geb=nb.reduce((x,b)=>x+(b.brutto-b.netPay),0);
+  return {anzahl:nb.length, preis:round2(brutto/naechte), naechte:Math.max(1,Math.round(naechte/nb.length)),
+          gebuehr:Math.round(geb/brutto*1000)/10};
 }
 
 /* --- Exportdateien ---
@@ -1122,6 +1190,9 @@ export {
   ausEinnahmenExport,
   erwarteteRaten,
   gedeckteNaechte,
+  planeAufenthalt,
+  preisPlanung,
+  planungsVorgabe,
   offenVereinigt,
   csvDatum,
   baueCsvMonate,

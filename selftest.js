@@ -27,6 +27,8 @@ import {
   istEinnahmenExport,
   erwarteteRaten,
   gedeckteNaechte,
+  preisPlanung,
+  planungsVorgabe,
   baueCsvMonate,
   baueCsvBuchungen,
   baueCsvGastbetraege,
@@ -752,6 +754,41 @@ if(location.search.indexOf('selftest')>=0){
   t('Nachprüfung PR 24','dieselbe Erstattung zweimal zählt einmal',
     verschmelzeBuchungen([erstDok],[erstDok]).schreiben[0].offen.length, 1);
   t('Nachprüfung PR 24','Buchung ohne offene Posten bekommt kein Feld', 'offen' in ohneErstDok, false);
+
+  /* Preisplanung: was bleibt, und welcher Nachtpreis gleich viel übrig lässt. */
+  const PL={preis:155,naechte:4,reinigung:0,kostenAufenthalt:0,kostenNacht:0,basis:'net'};
+  const pl=preisPlanung(PL,{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6});
+  t('Preisplanung','155 € bei 5 % → nötig bei 8 %', fmt(round2(pl.preisNoetig)), '160,54');
+  t('Preisplanung','nötiger Preis lässt gleich viel übrig', fmt(round2(pl.vergleich.bleibt)), fmt(round2(pl.heute.bleibt)));
+  t('Preisplanung','Ortstaxe wie in compute()',
+    fmt(round2(pl.heute.ortstaxe)), fmt(round2(csv('A;;G;16.09.2026;20.09.2026;;620').bookings[0].tax)));
+  t('Preisplanung','Ortstaxe bei 10 % USt wie in compute()',
+    fmt(round2(preisPlanung(Object.assign({},PL,{basis:'ust10'}),{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6}).heute.ortstaxe)),
+    fmt(round2(compute(parseCSV(HEAD+'\nA;;G;16.09.2026;20.09.2026;;620'),Object.assign({},BASE,{basis:'ust10'})).bookings[0].tax)));
+  t('Preisplanung','gleiche Kosten heben sich heraus',
+    fmt(round2(preisPlanung(Object.assign({},PL,{kostenAufenthalt:60,kostenNacht:5}),{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6}).preisNoetig)),
+    '160,54');
+  const plK=preisPlanung(Object.assign({},PL,{preis:166.5,kostenAufenthalt:60}),{reg:'r50',gebuehr:18.6},
+                         {reg:'r80',gebuehr:18.6,kostenAufenthalt:70});
+  t('Preisplanung','höhere Kosten im Vergleich: 166,50 → 175,83', fmt(round2(plK.preisNoetig)), '175,83');
+  t('Preisplanung','ohne Anpassung fehlen 27,62 €', fmt(round2(plK.heute.bleibt-plK.ohneAnpassung.bleibt)), '27,62');
+  t('Preisplanung','Reinigungsgebühr bleibt fest, nur der Nachtpreis steigt',
+    fmt(round2(preisPlanung(Object.assign({},PL,{reinigung:46}),{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6}).vergleich.gast
+      -preisPlanung(Object.assign({},PL,{reinigung:46}),{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6}).preisNoetig*4)), '46,00');
+  const planFehler=f=>{ try{ f(); return ''; }catch(e){ return e.message; } };
+  t('Preisplanung','0 Nächte werden abgewiesen',
+    /ganze Zahl ab 1/.test(planFehler(()=>preisPlanung(Object.assign({},PL,{naechte:0}),{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:18.6}))), true);
+  t('Preisplanung','Gebühr 100 % wird abgewiesen',
+    /unter 100 %/.test(planFehler(()=>preisPlanung(PL,{reg:'r50',gebuehr:100},{reg:'r80',gebuehr:18.6}))), true);
+  t('Preisplanung','Gebühr, bei der nichts bleibt, wird abgewiesen',
+    /nichts übrig/.test(planFehler(()=>preisPlanung(PL,{reg:'r50',gebuehr:18.6},{reg:'r80',gebuehr:95}))), true);
+  const vg=planungsVorgabe(ein([einz('Buchung','HM4Y','09/16/2026','09/20/2026',4,'542.12','123,88','666.00'),
+                               RATE1,RATE2]).bookings);
+  t('Preisplanung','Vorbelegung nur aus dem Modell „nur Gastgeber“',
+    vg.anzahl+'|'+fmt(vg.preis)+'|'+vg.naechte+'|'+vg.gebuehr, '1|166,50|4|18.6');
+  t('Preisplanung','ohne solche Buchungen keine Vorbelegung', planungsVorgabe(ein([RATE1,RATE2]).bookings), null);
+  t('Preisplanung','hochgerechnete Buchung zählt nicht zur Vorbelegung',
+    planungsVorgabe(ein([einz('Buchung','HMNG','07/28/2026','09/08/2026',42,'2523.40','576,60','3100.00','','07/29/2026')]).bookings), null);
 
   /* Grundlage: Monatszeilen, Fußzeile und Jahr müssen dieselbe Zahl ergeben (F12) */
   const abst=csv('A;;G;01.08.2026;02.08.2026;;100','B;;G;01.09.2026;02.09.2026;;100',
