@@ -722,7 +722,12 @@ async function importieren(ziel, opt, version, dateiname, text){
     }
     const vm=verschmelzeBuchungen(gespeichert, neu);
     if(ueberholt()) return stand('Objekt gewechselt — nichts gespeichert.', true);
-    await daten.schreibeBuchungen(ziel, vm.schreiben, {grund:'import',datei:dateiname,einstellungen:opt});
+    // Teilweise: eine Buchung, die einen abgeschlossenen Monat verschiebt, wird
+    // zurückgehalten; der Rest der Datei kommt trotzdem an. Sonst hielte eine
+    // zweite Rate aus dem Juli den ganzen September-Import auf.
+    const erg=await daten.schreibeBuchungen(ziel, vm.schreiben,
+      {grund:'import',datei:dateiname,einstellungen:opt,teilweise:true});
+    const zurueck=erg?.zurueckgehalten||[];
     if(ueberholt()) return;                  // Anzeige gehört jetzt einem anderen Stand
     // Ab hier ist die Datenbank die Quelle; paidRaw hat seinen Zweck erfüllt.
     // Bliebe es stehen, verdeckte es beim nächsten Import die neuen Dateiwerte.
@@ -730,16 +735,27 @@ async function importieren(ziel, opt, version, dateiname, text){
     // Der Bestand ist ausgetauscht: ein noch wartender Eingabe-Auftrag rechnete
     // aus dem Stand von vor dem Import und schriebe die Dateiwerte wieder weg.
     neuerBestand();
-    wolkeBestand = vm.unberuehrt.concat(vm.schreiben);
+    // Zurückgehaltene Buchungen stehen weiter so in der Datenbank wie vorher —
+    // und so muss sie auch die Anzeige rechnen.
+    const zurueckCodes=new Set(zurueck.map(z=>z.code));
+    wolkeBestand = vm.unberuehrt.concat(vm.schreiben.filter(d=>!zurueckCodes.has(d.code)))
+      .concat(gespeichert.filter(d=>zurueckCodes.has(d.code)));
     ungespeichert=false;
-    dateiHinweise={datei:dateiname, liste:res.warn.concat(vm.behalten.map(k=>k.code
+    const sperrHinweis=zurueck.length
+      ? 'Nicht übernommen, weil sie abgeschlossene Monate verschieben würden: '
+        +zurueck.map(z=>z.code).join(', ')+' — '+(erg.monate||[]).join('; ')
+        +'. Der gespeicherte Stand bleibt. Wer die Änderung will, öffnet diese Monate mit Begründung und lädt die Datei erneut.'
+      : null;
+    dateiHinweise={datei:dateiname, liste:res.warn.concat(sperrHinweis?[sperrHinweis]:[]).concat(vm.behalten.filter(k=>!zurueckCodes.has(k.code)).map(k=>k.code
       +' — die Datei enthält '+k.raten+' Monatsrate'+(k.raten===1?'':'n')+', gespeichert waren '
       +k.gespeichert+'. Zusammengeführt zu '+k.zusammen+' Rate'+(k.zusammen===1?'':'n')
       +' — eine Rate, die nur im gespeicherten Stand steht, geht nicht verloren.'))};
     run();
 
     const info=$('paidInfo'), teile=[];
-    teile.push(vm.schreiben.length+' Buchung'+(vm.schreiben.length===1?'':'en')+' gespeichert');
+    const geschrieben=vm.schreiben.length-zurueck.filter(z=>vm.schreiben.some(d=>d.code===z.code)).length;
+    teile.push(geschrieben+' Buchung'+(geschrieben===1?'':'en')+' gespeichert');
+    if(sperrHinweis) teile.push('Achtung: '+sperrHinweis);
     const stornos=res.storniert.filter(b=>b.stabil).length;
     if(stornos) teile.push(stornos+' als storniert vermerkt');
     if(vm.unberuehrt.length) teile.push(vm.unberuehrt.length+' aus früheren Importen unberührt');
@@ -751,12 +767,16 @@ async function importieren(ziel, opt, version, dateiname, text){
       teile.push('Achtung: '+kaputt.length+' Zeile'+(kaputt.length===1?'':'n')
         +' mit unlesbarem Betrag zurückgestellt ('+kaputt.map(b=>b.code).slice(0,5).join(', ')
         +') — der gespeicherte Stand bleibt unangetastet');
-    if(vm.konflikte.length)
-      teile.push('Achtung: '+vm.konflikte.length+' von Hand gesetzte Gastbeträge wurden von der '
-        +'Datei überschrieben ('+vm.konflikte.map(k=>k.code+': '+fmt(k.alt)+' → '+fmt(k.neu)).join(', ')+')');
+    const konflikte=vm.konflikte.filter(k=>!zurueckCodes.has(k.code));
+    if(konflikte.length)
+      teile.push('Achtung: '+konflikte.length+' von Hand gesetzte Gastbeträge wurden von der '
+        +'Datei überschrieben ('+konflikte.map(k=>k.code+': '+fmt(k.alt)+' → '+fmt(k.neu)).join(', ')+')');
     info.textContent=teile.join(' · ');
     info.classList.remove('hide');
-    stand('gespeichert '+new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'}));
+    const uhr=new Date().toLocaleTimeString('de-AT',{hour:'2-digit',minute:'2-digit'});
+    if(zurueck.length) stand('gespeichert '+uhr+' — '+zurueck.length+' Buchung'
+      +(zurueck.length===1?'':'en')+' in abgeschlossenen Monaten zurückgehalten', true);
+    else stand('gespeichert '+uhr);
     fuelleStaende();
   }catch(ex){
     stand('Nicht gespeichert: '+ex.message, true);

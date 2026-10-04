@@ -622,6 +622,28 @@ await seite.waitForTimeout(600);
 t('nach erneutem Laden noch gemeldet',/OP1 \(Otto\) — offene Posten/.test(await seite.textContent('#warnings')),true);
 await seite.selectOption('#abschlussMonat','2026-09');
 t('Monatsprüfung nennt die Erstattung',/Erstattung/.test(await seite.textContent('#abschlussWarnungen')),true);
+console.log('\nImport mit abgeschlossenem Monat: nur zurückhalten, was die Meldung verschiebt');
+await seite.selectOption('#abschlussMonat','2026-08');
+await seite.check('#abschlussVoll');await seite.check('#abschlussPruefung');await seite.check('#abschlussHinweise');
+await seite.click('#monatSchliessen');await seite.waitForTimeout(500);
+t('August wieder abgeschlossen',!!(await db()).abschluesse[mo]['2026-08'],true);
+// Vorher wies schon eine Änderung ohne Wirkung den ganzen Import ab — samt September.
+await lade(KOPF+'MF1;Bestätigt;Maria Neu;05.08.2026;06.08.2026;100,00;150,00\n'
+               +'NS1;Bestätigt;Nora;20.09.2026;22.09.2026;200,00;\n');
+await seite.waitForTimeout(900);
+t('Änderung ohne Wirkung im gesperrten Monat gespeichert',(await db()).buchungen[mo].MF1.name,'Maria Neu');
+t('September-Buchung aus derselben Datei gespeichert',!!(await db()).buchungen[mo].NS1,true);
+await lade(KOPF+'MF1;Bestätigt;Maria Neu;05.08.2026;06.08.2026;100,00;300,00\n'
+               +'NS2;Bestätigt;Nina;24.09.2026;26.09.2026;200,00;\n');
+await seite.waitForTimeout(900);
+t('Betrag im gesperrten Monat zurückgehalten',(await db()).buchungen[mo].MF1.gastbetrag,150);
+t('… der Rest der Datei kommt trotzdem an',!!(await db()).buchungen[mo].NS2,true);
+t('Meldung nennt Buchung und Monat',/MF1.*2026-08 \(Ortstaxe/.test(await seite.textContent('#paidInfo')),true);
+t('Status sagt „zurückgehalten“',/zurückgehalten/.test(await seite.textContent('#wolkeStand')),true);
+t('Hinweis bleibt in der Liste zur Datei',/Nicht übernommen/.test(await seite.textContent('#warnings')),true);
+t('Anzeige rechnet mit dem gespeicherten Betrag',await seite.$eval('.paid-in[data-key="MF1"]',e=>e.value),
+  await seite.evaluate(()=>{const v=150;return (v).toLocaleString('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2});}));
+t('August bleibt abgeschlossen',!!(await db()).abschluesse[mo]['2026-08'],true);
 if(process.env.REVIEW_SCREENSHOT) await seite.locator('#monatsarbeit').screenshot({path:process.env.REVIEW_SCREENSHOT});
 console.log('\nEigene JS-Fehler: ' + (fehler.length ? fehler.join(' | ') : 'keine'));
 if (fehler.length) schlecht += fehler.length;

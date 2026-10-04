@@ -1,4 +1,4 @@
-import {monatsStand, pruefeSperren, festeOptionen, kanonisch} from './abschluss.js';
+import {monatsStand, pruefeSperren, trenneSperren, festeOptionen, kanonisch} from './abschluss.js';
 /* Firestore-Anbindung: Anmeldung, Lesen, Schreiben, Schnappschüsse.
 
    Diese Datei ist die einzige Stelle, die mit Firebase spricht. Sie koordiniert
@@ -138,7 +138,10 @@ export async function ladeBuchungen(objektId){
   }
 }
 
-/* Buchungen, Verlauf und Sperrversion werden gemeinsam geschrieben. */
+/* Buchungen, Verlauf und Sperrversion werden gemeinsam geschrieben. Mit
+   kontext.teilweise (Import) werden Buchungen, die einen abgeschlossenen Monat
+   verschieben, zurückgehalten statt den ganzen Import abzuweisen; die Antwort
+   nennt sie. Ohne bleibt es bei ganz oder gar nicht. */
 export async function schreibeBuchungen(objektId, dokumente, kontext={}){
   return aendereBestand(objektId,dokumente,[],kontext);
 }
@@ -185,7 +188,14 @@ async function aendereBestand(o,docs,entfernen,kontext){
   if(istOfflineStand(o))throw new Error('Offline-Stand ist schreibgeschützt. Bitte online erneut laden.');
   const stand=await leseArbeitsstand(o), {f}=teile, benutzer=stand.benutzer;
   const vorher=new Map(stand.docs.map(d=>[d.code,d]));
-  const nach=new Map(vorher); entfernen.forEach(c=>nach.delete(c)); docs.forEach(d=>nach.set(d.code,d));
+  let nach=new Map(vorher); entfernen.forEach(c=>nach.delete(c)); docs.forEach(d=>nach.set(d.code,d));
+  // Getrennt wird gegen die gelesene Revision; die Transaktion bricht ab, wenn
+  // sich die Sperren seither geändert haben, und prüft das Ergebnis noch einmal.
+  let trennung={zurueckgehalten:[],monate:[]};
+  if(kontext.teilweise){
+    trennung=trenneSperren(stand.meta.sperren,stand.docs,[...nach.values()],kontext.einstellungen);
+    nach=new Map(trennung.neu.map(d=>[d.code,d]));
+  }
   const codes=[...new Set([...entfernen,...docs.map(d=>d.code)])];
   const geaendert=codes.filter(c=>kanonisch(vorher.get(c)||null)!==kanonisch(nach.get(c)||null));
   if(geaendert.length>400)throw new Error(kontext.grund==='wiederherstellung'
@@ -212,7 +222,7 @@ async function aendereBestand(o,docs,entfernen,kontext){
     tx.set(stand.ref,neueMeta);
   });}catch(e){arbeitsCache.delete(benutzer+'/'+o);throw e;}
   if(auth?.currentUser?.uid===benutzer)arbeitsCache.set(benutzer+'/'+o,structuredClone({benutzer,meta:neueMeta,docs:[...nach.values()]}));
-  return docs.length;
+  return kontext.teilweise ? {zurueckgehalten:trennung.zurueckgehalten,monate:trennung.monate} : docs.length;
 }
 export async function ladeAbschluesse(o){
   await start();const benutzer=uid(),ref=pfad(teile.f,o,'verwaltung','aktuell');let d;

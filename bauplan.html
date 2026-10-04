@@ -319,7 +319,7 @@ a:focus-visible,nav.toc a:focus-visible{outline:2px solid var(--akzent);outline-
         <tr><td class="datei">js/kern.js</td><td class="num">742</td><td><strong>Der Rechenkern.</strong> Reine Funktionen, kein <code>document</code>. CSV-Parser, Datumsordnung, Geldparser, <code>compute</code>, 90-Tage-Zähler, Jahressummen, die drei CSV-Exporte.</td></tr>
         <tr><td class="datei">js/oberflaeche.js</td><td class="num">975</td><td><strong>Alles mit DOM.</strong> Render, Handler, Sitzungszustand, Import- und Speicherkette, Sperren. Rechnet nichts selbst.</td></tr>
         <tr><td class="datei">js/daten.js</td><td class="num">306</td><td><strong>Die einzige Stelle, die mit Firebase spricht.</strong> Anmeldung, Laden, atomares Schreiben, Schnappschüsse, Monatssperren.</td></tr>
-        <tr><td class="datei">js/abschluss.js</td><td class="num">45</td><td>Reine Monatsprüfung und Sperrvergleich. Nutzt denselben Rechenkern wie die Anzeige.</td></tr>
+        <tr><td class="datei">js/abschluss.js</td><td class="num">111</td><td>Reine Monatsprüfung und Sperrvergleich nach Wirkung auf die Meldung. Nutzt denselben Rechenkern wie die Anzeige.</td></tr>
         <tr><td class="datei">js/belegpaket.js</td><td class="num">59</td><td>ZIP und PDF von Hand erzeugt — ohne CDN, ohne Build. Byteweise geschriebene ZIP-Header, ein Text-PDF in WinAnsi.</td></tr>
         <tr><td class="datei">js/firebase-config.js</td><td class="num">29</td><td>Projektdaten und die gepinnte SDK-Version.</td></tr>
         <tr><td class="datei">selftest.js</td><td class="num">958</td><td>Prüfungen des Rechenkerns. Wird nur bei <code>?selftest</code> nachgeladen.</td></tr>
@@ -369,7 +369,7 @@ a:focus-visible,nav.toc a:focus-visible{outline:2px solid var(--akzent);outline-
   <h2><span class="nr">07</span> Monatsabschluss und Belegpaket</h2>
   <div class="prosa">
     <p>Ein Abschluss friert einen geprüften Stand ein. Er bestätigt <em>keine</em> Abgabe bei VIETour — er dokumentiert, was du geprüft hast und wann.</p>
-    <p>Zum Abschließen bestätigst du Vollständigkeit und Belegprüfung; liegen rechnerische Hinweise vor, musst du auch die ausdrücklich akzeptieren. Danach sind die betroffenen Buchungen gesperrt: Änderungen — auch neue Buchungen, Stornierungen und Wiederherstellungen — werden im gemeinsamen Speicherweg abgewiesen. Wiederöffnen verlangt einen Grund von mindestens fünf Zeichen und behält den alten Abschluss im Protokoll.</p>
+    <p>Zum Abschließen bestätigst du Vollständigkeit und Belegprüfung; liegen rechnerische Hinweise vor, musst du auch die ausdrücklich akzeptieren. Danach ist gesperrt, was der Monat gemeldet hat: steuerpflichtige und befreite Nächte, Ortstaxe und die offenen Posten seiner Buchungen. Eine Änderung, die eine dieser Zahlen verschiebt — auch eine neue Buchung, eine Stornierung oder eine Wiederherstellung —, wird im gemeinsamen Speicherweg abgewiesen; eine, die sie gleich lässt (eine nachgereichte zweite Rate, ein ergänzter Bruttobetrag, ein anderer Name), geht durch. Ein Import hält nur die Buchungen zurück, die einen abgeschlossenen Monat verschieben, und speichert den Rest; die Meldung nennt Buchung, Monat und Zahl vorher → nachher. Wiederöffnen verlangt einen Grund von mindestens fünf Zeichen und behält den alten Abschluss im Protokoll.</p>
   </div>
   <h3>Was im ZIP liegt</h3>
   <div class="tabelle">

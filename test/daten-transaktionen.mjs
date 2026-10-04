@@ -51,6 +51,16 @@ try{
  await block(()=>d.loescheBuchung('a','A'));
  await block(()=>d.ersetzeBuchungen('a',[b],['A'],opt));
  await block(()=>d.schreibeBuchungen('a',[b],{einstellungen:{...opt,basis:'gross'}}));
+ // Ohne Wirkung auf die Meldung (Name) ist ein gesperrter Monat frei.
+ await d.schreibeBuchungen('a',[{...a,name:'Anders'}],{einstellungen:opt});ok(store.get(p+'buchungen/A').name==='Anders');
+ // Import teilweise: A verschiebt August und wird zurückgehalten, B kommt an — in einer Transaktion.
+ const logsVorTeil=details();
+ const teil=await d.schreibeBuchungen('a',[{...a,gastbetrag:200},{...b,gastbetrag:190},{...a,code:'NEU'}],{grund:'import',teilweise:true,einstellungen:opt});
+ ok(store.get(p+'buchungen/A').gastbetrag===150 && store.get(p+'buchungen/B').gastbetrag===190 && !store.has(p+'buchungen/NEU'));
+ ok(teil.zurueckgehalten.map(z=>z.code).join()==='A,NEU' && teil.monate[0].startsWith('2026-08 ('));
+ ok(details()===logsVorTeil+1 && (await d.ladeVerlauf('a','A')).every(e=>e.nachher?.gastbetrag!==200));
+ // Andere Einstellungen lassen sich nicht teilweise lösen: ganz abgewiesen.
+ await block(()=>d.schreibeBuchungen('a',[{...b,gastbetrag:170}],{teilweise:true,einstellungen:{...opt,basis:'gross'}}));
  await d.schreibeBuchungen('a',[{...b,gastbetrag:180}],{einstellungen:opt});ok(store.get(p+'buchungen/B').gastbetrag===180);
  await block(()=>d.oeffneMonat('a','2026-08',''));
  await d.oeffneMonat('a','2026-08','Beleg korrigiert');ok(!(await d.ladeAbschluesse('a'))['2026-08']);

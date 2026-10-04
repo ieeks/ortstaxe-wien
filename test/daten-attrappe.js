@@ -1,4 +1,4 @@
-import {monatsStand,pruefeSperren,kanonisch,festeOptionen} from './abschluss.js';
+import {monatsStand,pruefeSperren,trenneSperren,kanonisch,festeOptionen} from './abschluss.js';
 /* Attrappe der Firestore-Schicht für test/integration.mjs.
 
    Ersetzt js/daten.js: hält alles im Speicher und legt den Zustand
@@ -29,14 +29,21 @@ export async function ladeBuchungen(objektId){
 export async function schreibeBuchungen(objektId,docs,kontext={}){
   if(window.__schreibVerzug) await new Promise(r=>setTimeout(r,window.__schreibVerzug));
   const alt=Object.values(db.buchungen[objektId]||{}), neu={...(db.buchungen[objektId]||{})};docs.forEach(d=>neu[d.code]=d);
-  pruefeSperren(db.abschluesse?.[objektId],alt,Object.values(neu),kontext.einstellungen);
+  // Wie daten.js: beim Import nur zurückhalten, was einen gesperrten Monat verschiebt.
+  let trennung=null;
+  if(kontext.teilweise){
+    trennung=trenneSperren(db.abschluesse?.[objektId],alt,Object.values(neu),kontext.einstellungen);
+    const behalten=new Set(trennung.zurueckgehalten.map(z=>z.code));
+    docs=docs.filter(d=>!behalten.has(d.code));
+  }
+  pruefeSperren(db.abschluesse?.[objektId],alt,Object.values({...(db.buchungen[objektId]||{}),...Object.fromEntries(docs.map(d=>[d.code,d]))}),kontext.einstellungen);
   db.verlauf=db.verlauf||[];
   for(const d of docs){const a=(db.buchungen[objektId]||{})[d.code]||null;if(kanonisch(a)!==kanonisch(d))db.verlauf.push({objektId,code:d.code,zeit:new Date().toISOString(),grund:kontext.grund||'manuell',vorher:a,nachher:d,datei:kontext.datei||null});}
   if(kontext.einstellungen)await speichereEinstellungen(kontext.einstellungen);
   db.buchungen[objektId]=db.buchungen[objektId]||{};
   docs.forEach(d=>{ db.buchungen[objektId][d.code]=JSON.parse(JSON.stringify(d)); });
   db.schreibvorgaenge++;
-  return docs.length;
+  return trennung ? {zurueckgehalten:trennung.zurueckgehalten,monate:trennung.monate} : docs.length;
 }
 /* Wie im echten daten.js: ganz oder gar nicht. Mit __fehlerBeimSchreiben
    lässt sich ein Schreibfehler gezielt einspeisen. */
