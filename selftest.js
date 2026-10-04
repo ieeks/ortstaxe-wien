@@ -96,7 +96,13 @@ if(location.search.indexOf('selftest')>=0){
   const sperrFehler=(alt,neu,sp)=>{try{pruefeSperren(sp||{'2026-08':abStand},alt,neu,BASE);return '';}catch(e){return e.message;}};
   t('Sperre','Feld ohne Wirkung auf die Meldung ist frei',sperrFehler([abDoc],[{...abDoc,name:'Anders'}]),'');
   const betragFehler=sperrFehler([abDoc],[{...abDoc,gastbetrag:200}]);
-  t('Sperre','Meldung nennt Monat und Ortstaxe vorher → nachher',/2026-08 \(Ortstaxe [\d,]+ € → [\d,]+ €\)/.test(betragFehler),true);
+  t('Sperre','Meldung nennt Monat und Ortstaxe vorher → nachher',/2026-08 \(Ortstaxe [\d,]+ € → [\d,]+ €/.test(betragFehler),true);
+  // Das Entgelt steht im Formular: ein Cent mehr ist eine andere Meldung, auch
+  // wenn die gerundete Ortstaxe gleich bleibt.
+  const centDoc=[1,2,3,4,5,6,7,8,9].map(c=>({...abDoc,gastbetrag:150+c/100})).find(d=>{
+    const m=monatsStand([d],BASE,'2026-08');return m.ortstaxe===abStand.ortstaxe && m.entgelt!==abStand.entgelt;});
+  t('Sperre','Cent-Fall gefunden: gleiche Ortstaxe, anderes Entgelt',!!centDoc,true);
+  t('Sperre','… und bleibt gesperrt',/Entgelt [\d,]+ € → [\d,]+ €/.test(sperrFehler([abDoc],[centDoc||abDoc])),true);
   t('Sperre','Neuer offener Posten bleibt gesperrt',
     sperrFehler([abDoc],[{...abDoc,offen:[{typ:'Erstattung',datum:'2026-09-01',betrag:-20}]}]).includes('offene Posten'),true);
   t('Sperre','Buchung nur im offenen Monat ist frei',
@@ -109,6 +115,15 @@ if(location.search.indexOf('selftest')>=0){
   const juniStand=monatsStand([lgEins],BASE,'2026-06');
   t('Sperre','Zweite Rate lässt den abgeschlossenen Juni gleich',monatsStand([lgZwei],BASE,'2026-06').ortstaxe,juniStand.ortstaxe);
   t('Sperre','… und wird deshalb angenommen',sperrFehler([lgEins],[lgZwei],{'2026-06':juniStand}),'');
+  // Geprüft wird je Buchung: eine andere Buchung, die denselben Juni
+  // verschiebt, darf die harmlose zweite Rate nicht mitreißen — sonst fehlen
+  // die Juli-Nächte im offenen Folgemonat.
+  const juniGast={...abDoc,code:'JU1',von:'2026-06-05',bis:'2026-06-07'};
+  const juniBeide=monatsStand([lgEins,juniGast],BASE,'2026-06');
+  const trJ=trenneSperren({'2026-06':juniBeide},[lgEins,juniGast],[lgZwei,{...juniGast,gastbetrag:300}],BASE);
+  t('Sperre','Harmlose Rate kommt an, obwohl der Monat verschoben wird',trJ.zurueckgehalten.map(z=>z.code).join(),'JU1');
+  t('Sperre','… mit beiden Raten im Bestand',trJ.neu.find(d=>d.code==='LG1').raten.length,2);
+  t('Sperre','… und das Ergebnis besteht die Sperrprüfung',sperrFehler([lgEins,juniGast],trJ.neu,{'2026-06':juniBeide}),'');
 
   // Teilweiser Import: nur zurückhalten, was einen gesperrten Monat verschiebt.
   const sept={...abDoc,code:'S1',von:'2026-09-10',bis:'2026-09-12'};

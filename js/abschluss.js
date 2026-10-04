@@ -1,5 +1,5 @@
 /* Reine Monatsprüfung und Sperrvergleich. Derselbe Rechenkern wie die Anzeige. */
-import {compute, alsCsvZeilen, round2} from './kern.js';
+import {compute, alsCsvZeilen, round2, steuergrundlage} from './kern.js';
 export function festeOptionen(o={}){
   return Object.fromEntries(['basis','fee','gastfee','uid','zaehl','konto'].map(k=>[k,o[k]??null]));
 }
@@ -26,8 +26,13 @@ export function monatsStand(docs,opt,monat){
   const monate=res.months.filter(m=>m.month===monat);
   const befreiteNaechte=res.bookings.filter(b=>b.exempt).reduce((s,b)=>s+b.parts.filter(p=>p.month===monat).reduce((n,p)=>n+p.nights,0),0);
   if(befreiteNaechte)fehler.push(befreiteNaechte+' befreite Nächte sind nicht in den steuerpflichtigen Nächten enthalten.');
+  // Entgelt und Grundlage wie in Monatstabelle und CSV-Export: je Zeile
+  // gerundet. Sie gehören ins Formular und damit zum Abschluss — sonst ginge
+  // ein Cent Bemessungsgrundlage durch, solange die gerundete Taxe gleich bleibt.
   return {monat,buchungen,einstellungen:festeOptionen(opt),hinweise:[...new Set(fehler)],
     schaetzungen,befreiteNaechte,ortstaxe:round2(monate.reduce((s,m)=>s+m.tax,0)),
+    entgelt:round2(monate.reduce((s,m)=>s+round2(m.base),0)),
+    grundlage:round2(monate.reduce((s,m)=>s+round2(steuergrundlage(m.base,m.reg)),0)),
     naechte:monate.reduce((s,m)=>s+m.nights,0)};
 }
 /* Was ein abgeschlossener Monat gemeldet hat: steuerpflichtige und befreite
@@ -38,7 +43,7 @@ export function monatsStand(docs,opt,monat){
    dazu, ändert sich das Dokument, oft aber nicht die Meldung. */
 function wirkung(docs,opt,monat){
   const s=monatsStand(docs,opt,monat);
-  return {naechte:s.naechte,ortstaxe:s.ortstaxe,befreiteNaechte:s.befreiteNaechte,
+  return {naechte:s.naechte,ortstaxe:s.ortstaxe,entgelt:s.entgelt,grundlage:s.grundlage,befreiteNaechte:s.befreiteNaechte,
     offen:s.buchungen.filter(d=>Array.isArray(d.offen)&&d.offen.length).map(d=>d.code+':'+kanonisch(d.offen))};
 }
 const euro=n=>n.toFixed(2).replace('.',',')+' €';
@@ -47,20 +52,23 @@ const euro=n=>n.toFixed(2).replace('.',',')+' €';
    dieselben Optionen, nur der Bestand unterscheidet sich. Gegen die
    gespeicherte Ortstaxe zu vergleichen hieße, jede spätere Korrektur am
    Rechenkern als Buchungsänderung zu melden. */
+function abweichung(stand,alt,neu,opt,monat){
+  const o=stand.einstellungen||festeOptionen(opt);
+  const a=wirkung(alt,o,monat), n=wirkung(neu,o,monat);
+  if(kanonisch(a)===kanonisch(n))return null;
+  const was=[];
+  if(a.naechte!==n.naechte)was.push('Nächte '+a.naechte+' → '+n.naechte);
+  if(a.ortstaxe!==n.ortstaxe)was.push('Ortstaxe '+euro(a.ortstaxe)+' → '+euro(n.ortstaxe));
+  if(a.entgelt!==n.entgelt)was.push('Entgelt '+euro(a.entgelt)+' → '+euro(n.entgelt));
+  else if(a.grundlage!==n.grundlage)was.push('Grundlage '+euro(a.grundlage)+' → '+euro(n.grundlage));
+  if(a.befreiteNaechte!==n.befreiteNaechte)was.push('befreite Nächte '+a.befreiteNaechte+' → '+n.befreiteNaechte);
+  if(kanonisch(a.offen)!==kanonisch(n.offen))was.push('offene Posten geändert');
+  return monat+' ('+was.join(', ')+')';
+}
 function verschobeneMonate(sperren,alt,neu,opt){
-  const aus=[];
-  for(const [monat,stand] of Object.entries(sperren||{}).sort()){
-    const o=stand.einstellungen||festeOptionen(opt);
-    const a=wirkung(alt,o,monat), n=wirkung(neu,o,monat);
-    if(kanonisch(a)===kanonisch(n))continue;
-    const was=[];
-    if(a.naechte!==n.naechte)was.push('Nächte '+a.naechte+' → '+n.naechte);
-    if(a.ortstaxe!==n.ortstaxe)was.push('Ortstaxe '+euro(a.ortstaxe)+' → '+euro(n.ortstaxe));
-    if(a.befreiteNaechte!==n.befreiteNaechte)was.push('befreite Nächte '+a.befreiteNaechte+' → '+n.befreiteNaechte);
-    if(kanonisch(a.offen)!==kanonisch(n.offen))was.push('offene Posten geändert');
-    aus.push({monat,text:monat+' ('+was.join(', ')+')'});
-  }
-  return aus;
+  return Object.entries(sperren||{}).sort()
+    .map(([monat,stand])=>({monat,text:abweichung(stand,alt,neu,opt,monat)}))
+    .filter(m=>m.text);
 }
 export function pruefeSperren(sperren,alt,neu,opt){
   const felder=new Map();
@@ -76,36 +84,33 @@ export function pruefeSperren(sperren,alt,neu,opt){
   if(meldungen.length)throw new Error(meldungen.join(' ')+' Zum Ändern diese Monate zuerst mit Begründung wieder öffnen.');
 }
 /* Für den Import: statt alles abzuweisen, nur die Buchungen zurückhalten, die
-   einen abgeschlossenen Monat verschieben. Zurückgehalten heißt: der
-   gespeicherte Stand bleibt (eine neue Buchung wird nicht angelegt, eine
-   gelöschte nicht gelöscht). Wiederholt, bis kein gesperrter Monat mehr
-   abweicht — eine Buchung über zwei gesperrte Monate kann beim Zurückhalten
-   den zweiten berühren. Endet spätestens, wenn jede geänderte Buchung in einem
-   abweichenden Monat zurückgehalten ist: dann ist dessen Bestand wieder der
-   alte. Einstellungen trennt das nicht; die prüft pruefeSperren als Ganzes. */
+   einen abgeschlossenen Monat verschieben. Geprüft wird je Buchung, nicht je
+   Monat: vom gespeicherten Stand aus wird eine Änderung nach der anderen
+   übernommen, sofern die gesperrten Monate, die sie berührt, danach noch
+   dieselbe Meldung ergeben. Je Monat zurückzuhalten nahm eine harmlose zweite
+   Rate mit, sobald eine andere Buchung desselben Monats ihn verschob — und
+   mit ihr die Nächte des offenen Folgemonats. Weil jeder Schritt auf dem
+   bisher übernommenen Stand prüft, besteht das Ergebnis die Sperrprüfung
+   auch dort, wo erst zwei Änderungen zusammen die Rundung kippen.
+   Zurückgehalten heißt: der gespeicherte Stand bleibt (eine neue Buchung wird
+   nicht angelegt, eine gelöschte nicht gelöscht). Einstellungen trennt das
+   nicht; die prüft pruefeSperren als Ganzes. */
 export function trenneSperren(sperren,alt,neu,opt){
   const vorher=new Map(alt.map(d=>[d.code,d])), import_=new Map(neu.map(d=>[d.code,d]));
-  const nach=new Map(import_), zurueck=new Map(), verschoben=new Map();
-  const geaendert=[...new Set([...vorher.keys(),...import_.keys()])]
+  const nach=new Map(vorher), zurueck=[], gesperrt=Object.entries(sperren||{});
+  const geaendert=[...new Set([...vorher.keys(),...import_.keys()])].sort()
     .filter(c=>kanonisch(vorher.get(c)||null)!==kanonisch(import_.get(c)||null));
-  for(;;){
-    const monate=verschobeneMonate(sperren,alt,[...nach.values()],opt);
-    if(!monate.length)break;
-    let weiter=false;
-    for(const {monat,text} of monate){
-      if(!verschoben.has(monat))verschoben.set(monat,text);
-      for(const c of geaendert){
-        const a=vorher.get(c), n=import_.get(c);
-        if(!(a&&beruehrt(a,monat)) && !(n&&beruehrt(n,monat)))continue;
-        zurueck.set(c,new Set([...(zurueck.get(c)||[]),monat]));
-        if(kanonisch(nach.get(c)||null)===kanonisch(a||null))continue;
-        if(a)nach.set(c,a);else nach.delete(c);
-        weiter=true;
-      }
-    }
-    if(!weiter)throw new Error('Sperrprüfung ohne Ergebnis. Nichts gespeichert; bitte das Dev-Team kontaktieren.');
+  for(const c of geaendert){
+    const a=vorher.get(c), n=import_.get(c);
+    const kandidat=new Map(nach); if(n)kandidat.set(c,n);else kandidat.delete(c);
+    const betroffen=gesperrt.filter(([m])=>(a&&beruehrt(a,m)) || (n&&beruehrt(n,m)));
+    const monate=betroffen.filter(([m,stand])=>abweichung(stand,alt,[...kandidat.values()],opt,m)).map(([m])=>m);
+    if(monate.length)zurueck.push({code:c,monate:monate.sort()});
+    else{ if(n)nach.set(c,n);else nach.delete(c); }
   }
-  return {neu:[...nach.values()],
-    zurueckgehalten:[...zurueck].map(([code,m])=>({code,monate:[...m].sort()})).sort((x,y)=>x.code.localeCompare(y.code)),
-    monate:[...verschoben.keys()].sort().map(m=>verschoben.get(m))};
+  // Beschrieben wird je Monat, was die zurückgehaltenen Änderungen zusammen
+  // bewirkten — das, was ein Wiederöffnen und erneuter Import ergäbe.
+  const monate=[...new Set(zurueck.flatMap(z=>z.monate))].sort()
+    .map(m=>abweichung(sperren[m],alt,neu,opt,m)||m);
+  return {neu:[...nach.values()],zurueckgehalten:zurueck,monate};
 }
