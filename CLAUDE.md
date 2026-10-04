@@ -347,6 +347,30 @@ Monatssperren, Buchungen und Änderungsprotokoll werden zusammen verarbeitet.
 Bei einem abgewiesenen Import muss die zuvor sichtbare Quelle wiederhergestellt werden.
 Kein automatisches Wiederöffnen gesperrter Monate, keine Teilwrites bei Größenüberschreitung.
 
+**Gesperrt ist die Meldung, nicht das Dokument.** `pruefeSperren` rechnet jeden
+gesperrten Monat mit den Einstellungen des Abschlusses aus altem und neuem
+Bestand (`monatsStand`) und vergleicht Nächte, Ortstaxe, Entgelt und Grundlage
+(je Zeile gerundet wie in Tabelle und Export — beide gehören ins Formular, ein
+Cent darin ist eine andere Meldung, auch wenn die gerundete Taxe gleich
+bleibt), befreite Nächte und die offenen Posten. Vorher verglich es die Dokumente Feld für Feld: eine zweite Rate
+eines Langzeitgasts, ein nachgereichter Bruttobetrag oder der Wechsel vom
+Reservierungs- auf den Einnahmen-Export sperrte damit den ganzen Import, samt
+der Buchungen offener Monate. Verglichen wird alt gegen neu, nicht gegen die
+gespeicherte Ortstaxe — sonst meldete jede Korrektur am Rechenkern eine
+Buchungsänderung.
+
+Der Import schreibt mit `teilweise`: `trenneSperren` prüft **je Buchung**, nicht
+je Monat. Vom gespeicherten Stand aus wird eine Änderung nach der anderen
+übernommen, solange die gesperrten Monate, die sie berührt, dieselbe Meldung
+ergeben; sonst bleibt die Buchung auf ihrem gespeicherten Stand (eine neue wird
+nicht angelegt). Je Monat zurückzuhalten nahm eine harmlose zweite Rate mit,
+sobald eine andere Buchung desselben Monats ihn verschob — und damit die Nächte
+des offenen Folgemonats. Weil jeder Schritt auf dem schon übernommenen Stand
+prüft, kippt auch keine Rundung aus zwei Änderungen zusammen durch.
+Der Rest wird in derselben Transaktion geschrieben; die Antwort nennt Buchungen
+und Monate mit vorher → nachher. Eingaben, Löschen und Wiederherstellen bleiben
+ganz oder gar nicht, ebenso abweichende Einstellungen.
+
 ### Entscheidungen aus dem Review von PR #18
 
 - Die Online-Pflicht für geschützte Writes ist beabsichtigt: Monatssperre und
