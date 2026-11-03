@@ -37,6 +37,11 @@ das Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Behoben
 
+- Die Monatssperre akzeptiert bis zu 1 Cent Abweichung bei Entgelt und
+  Bemessungsgrundlage, sofern Ortstaxe, Nächte und offene Posten unverändert
+  bleiben. Die Toleranz gilt je Monat und gegenüber dem eingefrorenen Abschluss,
+  damit mehrere Buchungen und wiederholte Importe keine größere Abweichung
+  erzeugen. Abschlussbelege und Rechenregeln bleiben unverändert.
 - Die Drei-Monats-Frist der Befreiung nach § 11 Abs. 3 WTFG lief bei Anreisen am
   Monatsende über: `setUTCMonth` rollte den 31.03. auf den 01.07. statt nach
   § 902 ABGB auf den 30.06. zu klemmen. Ein Aufenthalt vom 31.03. bis 01.07. wurde

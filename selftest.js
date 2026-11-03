@@ -97,12 +97,44 @@ if(location.search.indexOf('selftest')>=0){
   t('Sperre','Feld ohne Wirkung auf die Meldung ist frei',sperrFehler([abDoc],[{...abDoc,name:'Anders'}]),'');
   const betragFehler=sperrFehler([abDoc],[{...abDoc,gastbetrag:200}]);
   t('Sperre','Meldung nennt Monat und Ortstaxe vorher → nachher',/2026-08 \(Ortstaxe [\d,]+ € → [\d,]+ €/.test(betragFehler),true);
-  // Das Entgelt steht im Formular: ein Cent mehr ist eine andere Meldung, auch
-  // wenn die gerundete Ortstaxe gleich bleibt.
-  const centDoc=[1,2,3,4,5,6,7,8,9].map(c=>({...abDoc,gastbetrag:150+c/100})).find(d=>{
-    const m=monatsStand([d],BASE,'2026-08');return m.ortstaxe===abStand.ortstaxe && m.entgelt!==abStand.entgelt;});
-  t('Sperre','Cent-Fall gefunden: gleiche Ortstaxe, anderes Entgelt',!!centDoc,true);
-  t('Sperre','… und bleibt gesperrt',/Entgelt [\d,]+ € → [\d,]+ €/.test(sperrFehler([abDoc],[centDoc||abDoc])),true);
+  // Regressionsfall: 1.300,60 → 1.300,59 € im abgeschlossenen April.
+  // Die Toleranz gilt für die Monatssumme und wird am Abschluss begrenzt.
+  const centDoc={...abDoc,code:'HMWT9RFS8X',von:'2026-04-05',bis:'2026-04-06',
+    auszahlung:1060.99,gastbetrag:null,brutto:1337.64};
+  const centStand=monatsStand([centDoc],BASE,'2026-04');
+  // Produktiv enthält die kompakte Monatssperre keine Buchungsliste.
+  const {buchungen:centBuchungen,schaetzungen:centSchaetzungen,...centSperre}=centStand;
+  const centSp={'2026-04':centSperre}, centNeu={...centDoc,brutto:1337.63};
+  t('Sperre','Cent-Fall: eingefrorenes Entgelt',centStand.entgelt,1300.60);
+  t('Sperre','Cent-Fall: neues Entgelt',monatsStand([centNeu],BASE,'2026-04').entgelt,1300.59);
+  t('Sperre','Cent-Fall: Ortstaxe bleibt gleich',monatsStand([centNeu],BASE,'2026-04').ortstaxe,centStand.ortstaxe);
+  t('Sperre','Ein Cent weniger ist erlaubt',sperrFehler([centDoc],[centNeu],centSp),'');
+  t('Sperre','Ein Cent mehr ist erlaubt',sperrFehler([centDoc],[{...centDoc,brutto:1337.65}],centSp),'');
+  t('Sperre','Zwei Cent bei gleicher Ortstaxe bleiben gesperrt',
+    sperrFehler([centDoc],[{...centDoc,brutto:1337.62}],centSp).includes('Entgelt'),true);
+  t('Sperre','Wiederholter Import darf den Cent nicht aufsummieren',
+    sperrFehler([centNeu],[{...centNeu,brutto:1337.62}],centSp).includes('Entgelt'),true);
+  t('Sperre','Cent-Korrektur zurück zum Abschluss ist erlaubt',sperrFehler([centNeu],[centDoc],centSp),'');
+  const centTeil=trenneSperren(centSp,[centDoc],[centNeu],BASE);
+  t('Sperre','Cent-Fall wird beim Teilimport übernommen',centTeil.neu[0].brutto,1337.63);
+  t('Sperre','Cent-Fall erzeugt keine Zurückhaltung',centTeil.zurueckgehalten.length,0);
+  const klein={...centDoc,code:'CENT2',brutto:10,auszahlung:8};
+  const zweiCentSp={'2026-04':monatsStand([centDoc,klein],BASE,'2026-04')};
+  const centTeil2=trenneSperren(zweiCentSp,[centDoc,klein],[centNeu,{...klein,brutto:9.99}],BASE);
+  t('Sperre','Zwei Buchungen teilen sich die monatliche Cent-Toleranz',centTeil2.zurueckgehalten.length,1);
+  t('Sperre','Teilimport besteht abschließende Transaktionsprüfung',sperrFehler([centDoc,klein],centTeil2.neu,zweiCentSp),'');
+  const steuerCent={...centDoc,brutto:100.21};
+  const steuerSp={'2026-04':monatsStand([steuerCent],BASE,'2026-04')};
+  t('Sperre','Auch ein Cent Ortstaxe bleibt gesperrt',
+    sperrFehler([steuerCent],[{...steuerCent,brutto:100.22}],steuerSp).includes('Ortstaxe'),true);
+  t('Sperre','Cent-Toleranz gibt keine geänderten Nächte frei',
+    sperrFehler([centDoc],[{...centNeu,bis:'2026-04-07'}],centSp).includes('Nächte'),true);
+  t('Sperre','Cent-Toleranz gibt keine offenen Posten frei',
+    sperrFehler([centDoc],[{...centNeu,offen:[{typ:'Erstattung',betrag:-1}]}],centSp).includes('offene Posten'),true);
+  t('Sperre','Grundlage bleibt zusätzlich am eingefrorenen Wert begrenzt',
+    sperrFehler([centDoc],[centNeu],{'2026-04':{...centSperre,grundlage:centSperre.grundlage+0.03}}).includes('Entgelt'),true);
+  t('Sperre','Alte Sperre ohne Betragswerte bekommt keine Toleranz',
+    sperrFehler([centDoc],[centNeu],{'2026-04':{einstellungen:centSperre.einstellungen}}).includes('Entgelt'),true);
   t('Sperre','Neuer offener Posten bleibt gesperrt',
     sperrFehler([abDoc],[{...abDoc,offen:[{typ:'Erstattung',datum:'2026-09-01',betrag:-20}]}]).includes('offene Posten'),true);
   t('Sperre','Buchung nur im offenen Monat ist frei',

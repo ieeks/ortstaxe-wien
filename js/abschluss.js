@@ -27,8 +27,8 @@ export function monatsStand(docs,opt,monat){
   const befreiteNaechte=res.bookings.filter(b=>b.exempt).reduce((s,b)=>s+b.parts.filter(p=>p.month===monat).reduce((n,p)=>n+p.nights,0),0);
   if(befreiteNaechte)fehler.push(befreiteNaechte+' befreite Nächte sind nicht in den steuerpflichtigen Nächten enthalten.');
   // Entgelt und Grundlage wie in Monatstabelle und CSV-Export: je Zeile
-  // gerundet. Sie gehören ins Formular und damit zum Abschluss — sonst ginge
-  // ein Cent Bemessungsgrundlage durch, solange die gerundete Taxe gleich bleibt.
+  // gerundet. Die Werte bleiben im Abschluss exakt erhalten; die Sperrprüfung
+  // toleriert lediglich eine begrenzte Cent-Abweichung bei gleicher Ortstaxe.
   return {monat,buchungen,einstellungen:festeOptionen(opt),hinweise:[...new Set(fehler)],
     schaetzungen,befreiteNaechte,ortstaxe:round2(monate.reduce((s,m)=>s+m.tax,0)),
     entgelt:round2(monate.reduce((s,m)=>s+round2(m.base),0)),
@@ -47,6 +47,19 @@ function wirkung(docs,opt,monat){
     offen:s.buchungen.filter(d=>Array.isArray(d.offen)&&d.offen.length).map(d=>d.code+':'+kanonisch(d.offen))};
 }
 const euro=n=>n.toFixed(2).replace('.',',')+' €';
+const innerhalbCent=(a,b)=>Number.isFinite(a) && Number.isFinite(b)
+  && Math.abs(Math.round(a*100)-Math.round(b*100))<=1;
+function nurCentAbweichung(stand,a,n){
+  const {entgelt:ae,grundlage:ag,...restAlt}=a;
+  const {entgelt:ne,grundlage:ng,...restNeu}=n;
+  // Ortstaxe, Nächte, Befreiungen und offene Posten bleiben exakt gleich.
+  // Zusätzlich am eingefrorenen Abschluss begrenzen: wiederholte Importe
+  // dürfen aus einem Cent keine schrittweise größere Abweichung machen.
+  // Alte Abschlüsse ohne Betragswerte erhalten keine zusätzliche Toleranz.
+  return kanonisch(restAlt)===kanonisch(restNeu)
+    && innerhalbCent(ae,ne) && innerhalbCent(ag,ng)
+    && innerhalbCent(stand.entgelt,ne) && innerhalbCent(stand.grundlage,ng);
+}
 /* Gesperrte Monate, deren Meldung sich durch neu gegenüber alt ändern würde.
    Gerechnet wird beides mit den Einstellungen des Abschlusses — derselbe Code,
    dieselben Optionen, nur der Bestand unterscheidet sich. Gegen die
@@ -56,6 +69,7 @@ function abweichung(stand,alt,neu,opt,monat){
   const o=stand.einstellungen||festeOptionen(opt);
   const a=wirkung(alt,o,monat), n=wirkung(neu,o,monat);
   if(kanonisch(a)===kanonisch(n))return null;
+  if(nurCentAbweichung(stand,a,n))return null;
   const was=[];
   if(a.naechte!==n.naechte)was.push('Nächte '+a.naechte+' → '+n.naechte);
   if(a.ortstaxe!==n.ortstaxe)was.push('Ortstaxe '+euro(a.ortstaxe)+' → '+euro(n.ortstaxe));

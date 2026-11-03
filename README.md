@@ -148,6 +148,14 @@ Nach Anmeldung steht im Ergebnisbereich **Monatsabschluss & Belege** zur Verfüg
 3. Änderungen, neue Buchungen, Stornierungen oder Wiederherstellungen, die den
    geschlossenen Monat berühren, werden vor dem Schreiben abgewiesen. Bei
    Aufenthalten über Monatsgrenzen schützt der Abschluss die ganze Buchung.
+   Ausnahme: Entgelt und Bemessungsgrundlage dürfen je Monat um höchstens
+   **1 Cent** abweichen, wenn Ortstaxe, steuerpflichtige und befreite Nächte
+   sowie offene Posten exakt gleich bleiben. Die Grenze gilt sowohl gegenüber
+   dem bisherigen Bestand als auch gegenüber dem eingefrorenen Abschluss;
+   mehrere Buchungen oder wiederholte Importe erweitern sie nicht.
+   Abschlussbeleg und Abschlusswerte bleiben unverändert; die übernommene
+   Buchungsänderung wird im Verlauf protokolliert. Fehlen bei einem älteren
+   Abschluss die Betragswerte, gilt weiterhin der exakte Vergleich.
    Auch abweichende Recheneinstellungen werden im Schreibweg des Objekts blockiert.
 4. **Mit Grund wieder öffnen** gibt den Monat wieder frei. Der bisherige Abschluss
    und der Grund bleiben in der Abschlusshistorie gespeichert.
