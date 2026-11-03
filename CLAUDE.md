@@ -350,9 +350,14 @@ Kein automatisches Wiederöffnen gesperrter Monate, keine Teilwrites bei Größe
 **Gesperrt ist die Meldung, nicht das Dokument.** `pruefeSperren` rechnet jeden
 gesperrten Monat mit den Einstellungen des Abschlusses aus altem und neuem
 Bestand (`monatsStand`) und vergleicht Nächte, Ortstaxe, Entgelt und Grundlage
-(je Zeile gerundet wie in Tabelle und Export — beide gehören ins Formular, ein
-Cent darin ist eine andere Meldung, auch wenn die gerundete Taxe gleich
-bleibt), befreite Nächte und die offenen Posten. Vorher verglich es die Dokumente Feld für Feld: eine zweite Rate
+(je Zeile gerundet wie in Tabelle und Export), befreite Nächte und die offenen
+Posten. Entgelt und Grundlage dürfen je Monat um höchstens einen Cent vom
+bisherigen Bestand UND vom eingefrorenen Abschluss abweichen, sofern alle
+anderen verglichenen Werte exakt gleich bleiben. Das verhindert, dass mehrere
+Buchungen oder wiederholte Importe die Toleranz aufsummieren. Fehlen die
+Betragswerte in einer alten Sperre, gilt der exakte Vergleich. Der Abschluss
+bleibt eingefroren; angenommene Buchungsänderungen werden regulär protokolliert.
+Vorher verglich es die Dokumente Feld für Feld: eine zweite Rate
 eines Langzeitgasts, ein nachgereichter Bruttobetrag oder der Wechsel vom
 Reservierungs- auf den Einnahmen-Export sperrte damit den ganzen Import, samt
 der Buchungen offener Monate. Verglichen wird alt gegen neu, nicht gegen die

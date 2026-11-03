@@ -62,6 +62,20 @@ try{
  // Andere Einstellungen lassen sich nicht teilweise lösen: ganz abgewiesen.
  await block(()=>d.schreibeBuchungen('a',[{...b,gastbetrag:170}],{teilweise:true,einstellungen:{...opt,basis:'gross'}}));
  await d.schreibeBuchungen('a',[{...b,gastbetrag:180}],{einstellungen:opt});ok(store.get(p+'buchungen/B').gastbetrag===180);
+ // Ein Cent bei gleicher Taxe kommt durch den echten Transaktionsweg an.
+ // Abschlussbeleg und kompakte Monatssperre bleiben dabei eingefroren.
+ const abschlussVorCent=await d.ladeAbschluss('a','2026-08');
+ const sperreVorCent=kopie(store.get(p+'verwaltung/aktuell').sperren['2026-08']);
+ const cent=await d.schreibeBuchungen('a',[{...a,gastbetrag:150.01}],{grund:'import',teilweise:true,einstellungen:opt});
+ ok(cent.zurueckgehalten.length===0 && store.get(p+'buchungen/A').gastbetrag===150.01);
+ ok((await d.ladeVerlauf('a','A')).some(e=>e.vorher.gastbetrag===150 && e.nachher.gastbetrag===150.01));
+ assert.deepEqual(await d.ladeAbschluss('a','2026-08'),abschlussVorCent);tests++;
+ assert.deepEqual(store.get(p+'verwaltung/aktuell').sperren['2026-08'],sperreVorCent);tests++;
+ // Auch nach erneutem Laden darf ein weiterer Cent nicht durchrutschen.
+ await d.ladeBuchungen('a');
+ const cent2=await d.schreibeBuchungen('a',[{...a,gastbetrag:150.02}],{grund:'import',teilweise:true,einstellungen:opt});
+ ok(cent2.zurueckgehalten[0].code==='A' && store.get(p+'buchungen/A').gastbetrag===150.01);
+ await block(()=>d.schreibeBuchungen('a',[{...a,gastbetrag:150.02}],{einstellungen:opt}));
  await block(()=>d.oeffneMonat('a','2026-08',''));
  await d.oeffneMonat('a','2026-08','Beleg korrigiert');ok(!(await d.ladeAbschluesse('a'))['2026-08']);
  await d.schreibeBuchungen('a',[{...a,gastbetrag:200}],{grund:'manuell',einstellungen:opt});ok(store.get(p+'buchungen/A').gastbetrag===200);
